@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>실시간 매물대</title>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root { --bg:#131722; --panel:#1b2030; --line:#2a3042; --text:#d1d4dc; --dim:#8a90a0; --up:#26a69a; --down:#ef5350; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px -apple-system, "Apple SD Gothic Neo", sans-serif; display:flex; flex-direction:column; height:100vh; }
+  header { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 14px; border-bottom:1px solid var(--line); }
+  select { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 7px; font:inherit; }
+  label { color:var(--dim); font-size:12px; }
+  #price { font-size:24px; font-weight:700; margin-left:auto; font-variant-numeric:tabular-nums; }
+  #dot { width:9px; height:9px; border-radius:50%; background:var(--down); display:inline-block; margin-right:5px; }
+  main { display:flex; flex:1; min-height:0; }
+  body:not(.detail) aside { display:none; }
+  button { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 9px; font:inherit; cursor:pointer; }
+  #ohlc { position:absolute; left:52px; top:8px; z-index:11; pointer-events:none; font-size:12px; background:rgba(19,23,34,.88);
+          padding:3px 8px; border-radius:4px; font-variant-numeric:tabular-nums; }
+  #tools { position:absolute; left:8px; top:8px; z-index:12; display:flex; flex-direction:column; gap:4px; }
+  #tools button { width:34px; height:30px; padding:0; font-size:13px; background:rgba(27,32,48,.92); }
+  #tools button.on { border-color:#4fc3f7; color:#4fc3f7; }
+  #status { display:flex; flex-wrap:wrap; gap:6px; padding:6px 14px; border-bottom:1px solid var(--line); font-size:13px; }
+  .chip { padding:4px 10px; border-radius:6px; background:var(--panel); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .chip .big { font-size:15px; font-weight:800; }
+  #chartWrap { position:relative; flex:1; min-width:0; }
+  #chart { position:absolute; inset:0; }
+  #overlay { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:10; }
+  aside { width:310px; flex-shrink:0; background:var(--panel); border-left:1px solid var(--line); padding:14px; overflow:auto; line-height:1.5; }
+  aside h3 { margin:0 0 5px; font-size:12px; color:var(--dim); font-weight:600; }
+  aside section { margin-bottom:14px; }
+  .ck-title { font-size:15px; font-weight:800; margin-bottom:10px; }
+  .card { background:#161b28; border:1px solid var(--line); border-radius:8px; padding:10px 11px; margin-bottom:10px; }
+  .ck-h { font-size:12px; color:var(--dim); font-weight:700; margin-bottom:6px; }
+  .verdict { font-size:28px; font-weight:900; line-height:1.1; }
+  .lrow { display:flex; justify-content:space-between; align-items:center; margin-top:6px; font-size:13px; font-weight:600; }
+  .dot { display:inline-block; width:13px; height:13px; border-radius:50%; margin-left:4px; }
+  .dimrow { color:var(--dim); font-size:12px; margin-top:4px; }
+  .kv { display:flex; justify-content:space-between; gap:8px; font-size:13.5px; margin-top:5px; font-variant-numeric:tabular-nums; }
+  .kv small { font-weight:500; color:var(--dim); }
+  .warn { margin-top:6px; font-size:12px; color:#ef5350; font-weight:700; }
+  .inrow { font-size:12px; color:var(--dim); margin-bottom:4px; }
+  .inrow input { width:62px; background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:5px; padding:3px 5px; font:inherit; }
+  .v { font-size:16px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .dim { color:var(--dim); font-size:12px; }
+  .zl { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px; padding:5px 7px; border-radius:6px; margin-bottom:4px; font-variant-numeric:tabular-nums; font-size:12.5px; }
+  .zl.r { background:rgba(255,107,61,.10); } .zl.s { background:rgba(38,166,154,.10); } .zl.in { background:rgba(240,162,2,.18); }
+  .zl b { font-weight:700; } .zl .d { color:var(--dim); white-space:nowrap; }
+  .zl.faded { opacity:.55; } .zl .zc { flex-basis:100%; font-size:11px; color:var(--dim); } .tag { font-size:10.5px; padding:0 4px; border-radius:4px; margin-left:3px; background:#2a3042; color:#c9ccd4; }
+  .rr { padding:6px 8px; border-radius:6px; background:#161b28; margin-bottom:5px; font-size:12.5px; font-variant-numeric:tabular-nums; }
+  .rr b.g { color:#26a69a; } .rr b.o { color:#f0a202; } .rr b.r { color:#ef5350; }
+  .gz { padding:7px 8px; border-radius:6px; background:#161b28; font-size:12.5px; font-variant-numeric:tabular-nums; }
+  .ck { display:flex; justify-content:space-between; gap:6px; padding:2px 0; } .ck .ok { color:#26a69a; } .ck .no { color:#ef5350; } .ck .mid { color:#8a90a0; }
+  #sig { border:1px solid var(--line); border-radius:8px; padding:10px; background:#161b28; }
+  #sigLabel { font-size:24px; font-weight:800; margin:2px 0; }
+  .lights { display:grid; grid-template-columns:repeat(6, 1fr); gap:2px; margin:8px 0 6px; text-align:center; font-size:10.5px; }
+  .lights i { display:block; width:14px; height:14px; border-radius:50%; margin:0 auto 2px; }
+  @media (max-width: 760px) { body { height:auto; } .chip { white-space:normal; } main { flex-direction:column; height:auto; } #chartWrap { flex:none; height:65vh; } aside { width:100%; } }
+</style>
+</head>
+<body>
+<header>
+  <select id="sym"><option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option></select>
+  <select id="mkt"><option value="spot" selected>현물 (봇)</option><option value="perp">선물 (무기한)</option></select>
+  <label>봉 <select id="iv">
+    <option value="1m">1분</option><option value="5m">5분</option><option value="15m">15분</option><option value="1h">1시간</option>
+    <option value="4h">4시간</option><option value="1d" selected>1일</option><option value="1w">1주</option></select></label>
+  <label>매물대 범위 <select id="pr"><option value="all" selected>전체 역사</option><option value="730">최근 2년</option>
+    <option value="365">최근 1년</option><option value="180">최근 6개월</option><option value="90">최근 3개월</option><option value="visible">보이는 구간</option></select></label>
+  <label>시간 가중 <select id="hl"><option value="0">없음</option><option value="365" selected>반감기 1년</option>
+    <option value="180">반감기 6개월</option><option value="90">반감기 3개월</option></select></label>
+  <label>막대 세밀도 <select id="bins"><option value="auto" selected>자동</option><option value="40">굵게</option>
+    <option value="80">보통</option><option value="140">세밀</option></select></label>
+  <label>가격축 <select id="scale"><option value="0" selected>일반</option><option value="1">로그</option></select></label>
+  <span class="dim"><span id="dot"></span><span id="upd">연결 중…</span></span>
+  <button id="fitBtn" title="세로 범위를 캔들에 다시 맞춤">맞춤</button>
+  <button id="detailBtn">체크 ▸</button>
+  <div id="price">-</div>
+</header>
+<div id="status"></div>
+<main>
+  <div id="chartWrap"><div id="chart"></div><canvas id="overlay"></canvas><div id="ohlc"></div>
+    <div id="tools">
+      <button data-tool="" class="on" title="이동 (Esc)">✥</button>
+      <button data-tool="h" title="수평선: 한 번 클릭">─</button>
+      <button data-tool="line" title="추세선: 시작점 클릭 → 끝점 클릭">╱</button>
+      <button data-tool="rect" title="박스: 한쪽 모서리 클릭 → 반대쪽 모서리 클릭">▭</button>
+      <button data-tool="fib" title="피보나치 되돌림: 시작점 클릭 → 끝점 클릭">Fib</button>
+      <button data-tool="del" title="지우개: 그린 것을 클릭하면 삭제">⌫</button>
+      <button id="clearDraw" title="그린 것 전부 삭제">🗑</button>
+    </div></div>
+  <aside>
+    <div class="ck-title">선물 체크 <span class="dim">· 오전 9시 종가 기준</span></div>
+    <div class="card"><div class="ck-h">① 방향</div><div id="ckDir"></div></div>
+    <div class="card"><div class="ck-h">② 손절 · 포지션 크기</div>
+      <div class="inrow">보기 <select id="viewDir"><option value="">신호 방향대로</option><option value="1">롱으로 미리보기</option><option value="-1">숏으로 미리보기</option></select></div>
+      <div class="inrow">선물 지갑 <input id="acct" type="number" min="1" step="any"> USDT · 주문 금액 = 지갑의 10% 고정</div>
+      <div id="ckPlan"></div></div>
+    <div class="card"><div class="ck-h">③ 3단 익절 · 10%는 추세 끝까지</div>
+      <div id="ckManage"></div></div>
+    <div class="card"><div class="ck-h">④ 보유 비용 (펀딩)</div><div id="ckCost"></div></div>
+    <div class="card"><div class="ck-h">⑤ 매물대 위치</div><div id="ckZone"></div></div>
+    <div class="dim" style="font-size:11px">선물 시스템은 백테스트상 아직 증명 안 된 가설이라 소액·데모로 확인 중. 투자 조언 아님.</div>
+  </aside>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const TZ = -new Date().getTimezoneOffset() * 60;           // show candle times in local time (KST)
+const RANK = ["①", "②", "③", "④", "⑤"];
+let chart, series, data = [], hist = [], ws = null, loadingOld = false, hasMore = true, livePrice = null, prof = null, profKey = null, dirty = true;
+
+// Per market: its own prices/volume, confirmation-line buffers and breakout stats (BTC history of that market).
+// Buffers = nearest distance whose close signal held at least 3 times in 4 (no close back across the zone within 10 days, 2021-2026).
+// Stats = first passage within 30 days between that market's 돌파 and 거절 lines.
+const MKT = {
+  spot: { name: "현물", api: "https://data-api.binance.vision/api/v3/klines", ws: "wss://data-stream.binance.vision/ws/",
+    brk: .05, rej: .03, brkDn: .03, hold: .05,
+    st: { n: 128, from: 2019, base: 35, on: 43, off: 30, fast: 60, slow: 29, surge: 52, low: 30, cut: .08, thin: 39, thick: 31 } },
+  perp: { name: "선물", api: "https://fapi.binance.com/fapi/v1/klines", ws: "wss://fstream.binance.com/market/ws/",
+    brk: .05, rej: .02, brkDn: .03, hold: .05,
+    st: { n: 94, from: 2021, base: 23, on: 36, off: 19, fast: 29, slow: 22, surge: 30, low: 14, cut: .09, thin: 32, thick: 15 } },
+};
+const M = () => MKT[$("mkt").value];
+try { const m = localStorage.getItem("mkt"); if (MKT[m]) $("mkt").value = m; } catch {}
+const api = () => M().api;
+// USDⓈ-M market streams live under /market/ws/ (the old /ws/ path connects but sends nothing)
+const wsUrl = () => M().ws
+                    + $("sym").value.toLowerCase() + "@kline_" + $("iv").value;
+// q = traded USDT, tb = the part bought at market (taker buy); the rest was sold at market
+const toBar = k => ({ time: k[0] / 1000 + TZ, open: +k[1], high: +k[2], low: +k[3], close: +k[4], q: +k[7], tb: +k[10] });
+const fmt = v => v.toLocaleString("en-US", { maximumFractionDigits: v < 1000 ? 2 : 0 });
+const pct = (a, b) => (a / b - 1) * 100;
+const sgn = v => (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
+const nowPrice = () => livePrice ?? (data.length ? data[data.length - 1].close : null);
+
+async function klines(interval, endTime) {
+  const p = new URLSearchParams({ symbol: $("sym").value, interval, limit: 1000 });
+  if (endTime) p.set("endTime", endTime);
+  const r = await fetch(api() + "?" + p);
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return (await r.json()).map(toBar);
+}
+
+// ---- bot rule (identical to bot.target_weight): 6 trend votes on completed daily closes + 40% vol target ----
+const SPEEDS = [7, 14, 28, 56, 112, 224], LIGHT = ["1주", "2주", "4주", "8주", "16주", "32주"];
+let dailyCloses = [], lastDay = null, btcCloses = [];
+const todayUTC = () => Math.floor(Date.now() / 864e5) * 864e5;
+
+function ruleAt(c) {                                   // last element = the close the decision is made on
+  const n = c.length, last = c[n - 1];
+  const lights = SPEEDS.map((k, i) => ({ lab: LIGHT[i], ref: c[n - 1 - k], up: last > c[n - 1 - k], chg: last / c[n - 1 - k] - 1 }));
+  const votes = lights.filter(l => l.up).length, lr = [];
+  for (let i = n - 20; i < n; i++) lr.push(Math.log(c[i] / c[i - 1]));
+  const m = lr.reduce((s, v) => s + v, 0) / lr.length;
+  const vol = Math.sqrt(lr.reduce((s, v) => s + (v - m) ** 2, 0) / (lr.length - 1) * 365);
+  const w = votes >= 4 && vol > 0 ? Math.min(1, .4 / vol) : 0;
+  return { lights, votes, vol, weight: Math.round(w / .1) / 10 };
+}
+
+// full daily history: drives the bot signal and the "whole history / 1-2 year" volume profile on any chart interval
+async function loadDaily(full) {
+  let bars = await klines("1d");
+  if (full) {
+    for (;;) {
+      const older = await klines("1d", (bars[0].time - TZ) * 1000 - 1), fresh = older.filter(b => b.time < bars[0].time);
+      if (!fresh.length) break;
+      bars = fresh.concat(bars);
+      if (older.length < 1000) break;
+    }
+    hist = bars;
+  } else {
+    const m = new Map(hist.map(b => [b.time, b])); bars.forEach(b => m.set(b.time, b));
+    hist = [...m.values()].sort((a, b) => a.time - b.time);
+  }
+  const t0 = todayUTC() / 1000, done = hist.filter(b => b.time - TZ < t0);
+  dailyCloses = done.map(b => b.close); lastDay = new Date((done[done.length - 1].time - TZ) * 1000);
+  if ($("sym").value === "BTCUSDT") btcCloses = dailyCloses;
+  else {
+    const r = await fetch(api() + "?" + new URLSearchParams({ symbol: "BTCUSDT", interval: "1d", limit: 300 }));
+    btcCloses = (await r.json()).map(toBar).filter(b => b.time - TZ < t0).map(b => b.close);
+  }
+  profKey = null; dirty = true;
+}
+
+// futures system = wf_fut.py's current pick (2026-07 quarter; re-pick quarterly): long if coin >= 5/6 and BTC >= 4/6,
+// short if coin <= 1/6 and BTC <= 2/6
+const FUT = { long: 5, short: 1, btcLong: 4, btcShort: 2 };
+
+// zone confirmations decided by the last completed daily close (one-day check: touched and closed past the line)
+function closeEvents() {
+  const done = hist.filter(b => b.time - TZ < todayUTC() / 1000), b = done[done.length - 1], a = done[done.length - 2], m = M(), out = [];
+  if (!b || !a || !prof) return out;
+  for (const z of prof.zones) {
+    const brk = z.hi * (1 + m.brk), rej = z.lo * (1 - m.rej), dn = z.lo * (1 - m.brkDn), hold = z.hi * (1 + m.hold);
+    if (a.close < z.lo && b.high >= z.lo && b.close < rej) out.push(["거절 확정", "#ef5350", z]);
+    if (a.close <= z.hi && b.close > brk) out.push(["돌파 확정", "#26a69a", z]);      // was in/below the zone
+    if (a.close >= z.lo && b.close < dn) out.push(["이탈 확정", "#ef5350", z]);       // was in/above the zone (support)
+    if (a.close > z.hi && b.low <= z.hi && b.close > hold) out.push(["지지 확인", "#26a69a", z]);
+  }
+  return out;
+}
+
+// ---- drawing tools: horizontal line, trend line, box, fib retracement. Anchored to time + price, so they follow the chart on
+// every interval; kept per market + symbol in this browser (localStorage). Click to place (two clicks for line/box/fib).
+const DCOL = "#4fc3f7", FIB = [0, .236, .382, .5, .618, .786, 1];
+let tool = "", shapes = [], pending = null, mouse = null;
+const drawKey = () => `draw_${$("mkt").value}_${$("sym").value}`;
+const loadShapes = () => { try { shapes = JSON.parse(localStorage.getItem(drawKey()) || "[]"); } catch { shapes = []; } pending = null; };
+const saveShapes = () => { try { localStorage.setItem(drawKey(), JSON.stringify(shapes)); } catch {} };
+const barSec = () => data.length > 1 ? data[data.length - 1].time - data[data.length - 2].time : 86400;
+function xToTime(x) {
+  const l = chart.timeScale().coordinateToLogical(x), n = data.length;
+  if (l === null || !n) return null;
+  const i = Math.floor(l);
+  if (i < 0) return data[0].time + l * barSec();
+  if (i >= n - 1) return data[n - 1].time + (l - (n - 1)) * barSec();
+  return data[i].time + (l - i) * (data[i + 1].time - data[i].time);
+}
+function timeToX(t) {
+  const n = data.length; let l;
+  if (t <= data[0].time) l = (t - data[0].time) / barSec();
+  else if (t >= data[n - 1].time) l = n - 1 + (t - data[n - 1].time) / barSec();
+  else { let a = 0, b = n - 1; while (b - a > 1) { const m = (a + b) >> 1; if (data[m].time <= t) a = m; else b = m; }
+    l = a + (t - data[a].time) / (data[b].time - data[a].time); }
+  return chart.timeScale().logicalToCoordinate(l);
+}
+function shapeGeom(s) {                                  // pixel geometry, or null when it cannot be placed yet
+  const y1 = series.priceToCoordinate(s.p1);
+  if (s.type === "h") return y1 === null ? null : { y1 };
+  const x1 = timeToX(s.t1), x2 = timeToX(s.t2), y2 = series.priceToCoordinate(s.p2);
+  return [x1, x2, y1, y2].some(v => v === null) ? null : { x1, x2, y1, y2 };
+}
+function drawShapes(g, y, paneW, H) {
+  const list = shapes.slice();
+  if (mouse && pending) list.push({ ...pending, t2: mouse.t, p2: mouse.p, preview: true });
+  else if (mouse && tool === "h") list.push({ type: "h", p1: mouse.p, preview: true });
+  if (!list.length) return;
+  g.save(); g.beginPath(); g.rect(0, 0, paneW, H - 28); g.clip();
+  g.font = "11px -apple-system, sans-serif"; g.lineWidth = 1.4;
+  for (const s of list) {
+    const q = shapeGeom(s); if (!q) continue;
+    g.strokeStyle = g.fillStyle = DCOL; g.setLineDash(s.preview ? [4, 3] : []);
+    const seg = (a, b, c, d) => { g.beginPath(); g.moveTo(a, b); g.lineTo(c, d); g.stroke(); };
+    if (s.type === "h") { seg(0, q.y1, paneW, q.y1); g.fillText(fmt(s.p1), 52, q.y1 - 4); }
+    else if (s.type === "line") seg(q.x1, q.y1, q.x2, q.y2);
+    else if (s.type === "rect") {
+      const x = Math.min(q.x1, q.x2), yy = Math.min(q.y1, q.y2), w = Math.abs(q.x2 - q.x1), h = Math.abs(q.y2 - q.y1);
+      g.fillStyle = "rgba(79,195,247,.12)"; g.fillRect(x, yy, w, h); g.strokeRect(x, yy, w, h);
+    } else if (s.type === "fib") {
+      const x = Math.min(q.x1, q.x2);
+      g.setLineDash([2, 3]); seg(q.x1, q.y1, q.x2, q.y2); g.setLineDash(s.preview ? [4, 3] : []);
+      for (const f of FIB) { const p = s.p2 + (s.p1 - s.p2) * f, yy = y(p); if (yy === null) continue;
+        g.globalAlpha = f === 0 || f === 1 ? 1 : .75; seg(x, yy, paneW, yy); g.fillText(`${f} (${fmt(p)})`, x + 4, yy - 3); }
+      g.globalAlpha = 1;
+    }
+  }
+  g.setLineDash([]); g.restore();
+}
+function hitShape(x, yy) {                                 // index of the top-most drawing under the point, or -1
+  const dSeg = (a, b, c, d) => { const L = (c - a) ** 2 + (d - b) ** 2, t = L ? Math.max(0, Math.min(1, ((x - a) * (c - a) + (yy - b) * (d - b)) / L)) : 0;
+    return Math.hypot(x - (a + t * (c - a)), yy - (b + t * (d - b))); };
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i], q = shapeGeom(s); if (!q) continue;
+    if (s.type === "h" ? Math.abs(yy - q.y1) < 7 : s.type === "line" ? dSeg(q.x1, q.y1, q.x2, q.y2) < 7
+      : x >= Math.min(q.x1, q.x2) - 5 && (s.type === "fib" || x <= Math.max(q.x1, q.x2) + 5) && yy >= Math.min(q.y1, q.y2) - 5 && yy <= Math.max(q.y1, q.y2) + 5) return i;
+  }
+  return -1;
+}
+function setTool(t) {
+  tool = t; pending = null; mouse = null; lastSig = "";
+  document.querySelectorAll("#tools button[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
+}
+function chartClick(x, yy) {                               // a click (not a drag) on the price pane while a tool is active
+  if (!tool || x > chart.timeScale().width() || yy > $("chartWrap").clientHeight - 28) return;
+  const t = xToTime(x), p = series.coordinateToPrice(yy);
+  if (t === null || p === null) return;
+  if (tool === "del") { const i = hitShape(x, yy); if (i >= 0) shapes.splice(i, 1); }
+  else if (tool === "h") { shapes.push({ type: "h", p1: p }); setTool(""); }
+  else if (!pending) { pending = { type: tool, t1: t, p1: p }; lastSig = ""; return; }
+  else { shapes.push({ ...pending, t2: t, p2: p }); setTool(""); }
+  saveShapes(); lastSig = "";
+}
+
+// values of the candle under the mouse (the latest one otherwise), so the close is read as a number, not from the picture
+let hoverBar = null;
+function showOHLC() {
+  const b = hoverBar || data[data.length - 1]; if (!b) return;
+  const t = new Date(b.time * 1000).toISOString(), live = b.time === data[data.length - 1].time;
+  const when = /[dw]$/.test($("iv").value) ? `${t.slice(5, 10)} 봉 ${live ? "(진행 중)" : "(종가 = 다음날 오전 9시 가격)"}` : `${t.slice(5, 10)} ${t.slice(11, 16)}${live ? " (진행 중)" : ""}`;
+  const col = b.close >= b.open ? "#26a69a" : "#ef5350";
+  // volume vs the median of the 30 bars before it, and the share bought at market
+  const i = data.findIndex(x => x.time === b.time), bar = data[i], prev = data.slice(Math.max(0, i - 30), i).map(x => x.q).sort((x, y) => x - y);
+  const med = prev[Math.floor(prev.length / 2)], usd = v => v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : (v / 1e6).toFixed(1) + "M";
+  $("ohlc").innerHTML = `${when} · 시가 ${fmt(b.open)} · 고가 ${fmt(b.high)} · 저가 ${fmt(b.low)} · `
+    + `<b style="color:${col}">${live ? "현재" : "종가"} ${fmt(b.close)}</b> <span class="dim">(${sgn(pct(b.close, b.open))})</span>`
+    + (bar ? ` · 거래량 ${usd(bar.q)} USDT${med && !live ? ` <b>(평소의 ${(bar.q / med).toFixed(1)}배)</b>` : ""} · 시장가 매수 ${(bar.tb / bar.q * 100).toFixed(0)}%` : "");
+}
+
+function signal() {
+  if (dailyCloses.length < 250) return;
+  const now = ruleAt(dailyCloses), prev = ruleAt(dailyCloses.slice(0, -1));
+  const live = nowPrice() ?? dailyCloses[dailyCloses.length - 1], coin = $("sym").value.replace("USDT", "");
+  const G = "#26a69a", R = "#ef5350", O = "#f0a202", D = "#8a90a0";
+  const [label, color] = prev.weight === 0 && now.weight > 0 ? ["매수 신호", G]
+    : prev.weight > 0 && now.weight === 0 ? ["매도 신호", R]
+    : now.weight > prev.weight ? ["비중 확대", G]
+    : now.weight > 0 && now.weight < prev.weight ? ["비중 축소", O]
+    : now.weight > 0 ? ["보유", G] : ["관망 (현금)", D];
+  if (!hoverBar) showOHLC();
+  const vb = btcCloses.length >= 250 ? ruleAt(btcCloses).votes : null, v = now.votes;
+  const fut = vb === null ? `<b style="color:${D}">BTC 데이터 대기</b>`
+    : v >= FUT.long && vb >= FUT.btcLong ? `<b style="color:${G}">롱 조건 ✓</b>`
+    : v <= FUT.short && vb <= FUT.btcShort ? `<b style="color:${R}">숏 조건 ✓</b>` : `<b style="color:${D}">대기</b>`;
+  const ev = closeEvents(), day = lastDay.toISOString().slice(5, 10);
+  $("status").innerHTML =
+    `<span class="chip"><span class="big" style="color:${color}">${label}</span> 현물 봇 ${coin} ${Math.round(now.weight * 100)}%</span>`
+    + `<span class="chip">선물: ${fut} · ${coin} ${v}/6${vb === null ? "" : ` · BTC ${vb}/6`}</span>`
+    + `<span class="chip">${day} 종가: ${ev.length ? ev.map(([n, c, z]) => `<b style="color:${c}">${n}</b> ${fmt(z.lo)}~${fmt(z.hi)}`).join(" · ") : `<span class="dim">확정 이벤트 없음</span>`}</span>`;
+  check(now, live);
+}
+
+// ---- 선물 체크: what to look at before a manual futures trade, from the system in wf_fut.py (current quarter's pick) ----
+const MIN_NOTIONAL = { BTCUSDT: 50, ETHUSDT: 20, SOLUSDT: 5 };      // Binance USDⓈ-M minimum order value
+let plan = null, funding = null;
+const sma = (c, n) => c.length >= n ? c.slice(-n).reduce((a, b) => a + b, 0) / n : null;
+function atr14() {
+  const t0 = todayUTC() / 1000 + TZ, d = hist.filter(b => b.time < t0).slice(-15);
+  if (d.length < 15) return null;
+  let sum = 0;
+  for (let i = 1; i < 15; i++) sum += Math.max(d[i].high - d[i].low, Math.abs(d[i].high - d[i - 1].close), Math.abs(d[i].low - d[i - 1].close));
+  return sum / 14;
+}
+async function loadFunding() {
+  funding = null;
+  if ($("mkt").value !== "perp") return;
+  try { const r = await (await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${$("sym").value}`)).json();
+    funding = { rate: +r.lastFundingRate, next: r.nextFundingTime }; } catch {}
+  dirty = true;
+}
+const dots = lights => lights.map(l => `<i class="dot" title="${l.lab} 전 대비 ${(l.chg * 100).toFixed(1)}%" style="background:${l.up ? "#26a69a" : "#ef5350"}"></i>`).join("");
+function check(now, live) {
+  const coin = $("sym").value.replace("USDT", ""), G = "#26a69a", R = "#ef5350", D = "#8a90a0";
+  const btc = btcCloses.length >= 250 ? ruleAt(btcCloses) : null, v = now.votes, vb = btc ? btc.votes : null;
+  const dir = vb === null ? 0 : v >= FUT.long && vb >= FUT.btcLong ? 1 : v <= FUT.short && vb <= FUT.btcShort ? -1 : 0;
+  const bma = sma(btcCloses, 200), bull = bma !== null && btcCloses[btcCloses.length - 1] > bma;
+  const why = dir ? "조건 충족 · 진입은 오전 9시 종가 기준" : vb === null ? "BTC 데이터 대기"
+    : v > FUT.short && v < FUT.long ? `${coin} 신호 ${v}개 → 롱은 ${FUT.long}개 이상, 숏은 ${FUT.short}개 이하일 때`
+    : v >= FUT.long ? `BTC 신호 ${vb}개 → 롱은 BTC ${FUT.btcLong}개 이상일 때` : `BTC 신호 ${vb}개 → 숏은 BTC ${FUT.btcShort}개 이하일 때`;
+  $("ckDir").innerHTML = `<div class="verdict" style="color:${dir > 0 ? G : dir < 0 ? R : D}">${dir > 0 ? "롱 가능" : dir < 0 ? "숏 가능" : "대기"}</div>`
+    + `<div class="dimrow">${why}</div>`
+    + `<div class="lrow"><span>${coin} 추세 ${v}/6</span><span>${dots(now.lights)}</span></div>`
+    + (btc ? `<div class="lrow"><span>BTC 추세 ${vb}/6</span><span>${dots(btc.lights)}</span></div>` : "")
+    + `<div class="dimrow">신호 = 지금 종가가 1·2·4·8·16·32주 전보다 높으면 초록</div>`
+    + `<div class="kv"><span>장세 (BTC 200일선)</span><b style="color:${bull ? G : R}">${bma === null ? "-" : bull ? "상승장" : "하락장"} <small>${bma ? fmt(bma) : ""}</small></b></div>`;
+  const a = atr14();
+  plan = null;
+  if (!a) { $("ckPlan").innerHTML = `<div class="dimrow">ATR 계산 대기</div>`; $("ckManage").innerHTML = ""; return; }
+  const force = +$("viewDir").value, d = force || dir || 1, preview = !dir || (force && force !== dir);
+  const stop = live - d * 2 * a, stopPct = 2 * a / live, be = live + d * 2 * a;
+  // order size fixed at 10% of the futures wallet (user's choice); the loss at the stop follows from the stop distance
+  const acct = +$("acct").value || 0, notional = acct * .1;
+  // Binance USDⓈ-M regular fees: maker 0.02% (limit take-profits), taker 0.05% (market entry, stop-market exit)
+  const FEE_M = .0002, FEE_T = .0005, entryFee = notional * FEE_T, stopFee = notional * (1 - d * stopPct) * FEE_T;
+  const lossAll = notional * stopPct + entryFee + stopFee, risk = lossAll / Math.max(acct, 1e-9);
+  const lev = notional / Math.max(acct, 1e-9), min = MIN_NOTIONAL[$("sym").value] ?? 5;
+  // cross margin: the whole futures wallet backs the position, so liquidation is where the loss eats the wallet
+  // (rough: ignores other open positions and maintenance tiers)
+  const qty = notional / live, liqX = live - d * (acct - .005 * notional) / Math.max(qty, 1e-12);
+  const liqNone = d > 0 ? liqX <= 0 : false, liqOk = d > 0 ? liqX < stop : liqX > stop;
+  if (dir || force) plan = { dir: d, stop, be, preview };
+  $("ckPlan").innerHTML = (preview ? `<div class="dimrow">지금 신호는 ${dir > 0 ? "롱" : dir < 0 ? "숏" : "대기"} · 아래는 <b>${d > 0 ? "롱" : "숏"}</b>으로 들어간다면의 참고값</div>` : "")
+    + `<div class="kv"><span>손절가 (2 ATR)</span><b style="color:${R}">${fmt(stop)} <small>${sgn(-d * stopPct * 100)}</small></b></div>`
+    + `<div class="kv"><span>주문 금액 (포지션)</span><b>${notional.toFixed(1)} USDT <small>${(notional / live).toPrecision(3)} ${coin}</small></b></div>`
+    + `<div class="kv"><span>필요 레버리지</span><b>${lev <= 1 ? "1배로 충분" : lev.toFixed(1) + "배"}</b></div>`
+    + `<div class="kv"><span>크로스 청산가 (약)</span><b style="color:${liqOk ? G : R}">${liqNone ? "사실상 없음" : fmt(liqX) + (liqOk ? " ✓" : " ✗")}</b></div>`
+    + `<div class="dimrow">크로스는 지갑 전체가 증거금 → 거래소에 손절(스탑마켓) 주문 꼭 걸기</div>`
+    + `<div class="dimrow">손절되면 −${lossAll.toFixed(2)} USDT (수수료 ${(entryFee + stopFee).toFixed(3)} 포함) = 지갑의 <b style="color:${risk > .01 ? R : G}">${(risk * 100).toFixed(2)}%</b>${risk > .01 ? " (1% 초과)" : ""} · 롱·숏 같음</div>`
+    + `<div class="dimrow">수수료: 시장가 진입 0.05% · 지정가 익절 0.02% · 스탑마켓 손절 0.05% (BNB로 내면 10% 할인)</div>`
+    + (notional < min ? `<div class="warn">바이낸스 최소 주문 ${min} USDT 미만 → 최소 ${min} USDT로 들어가면 손절 시 지갑의 ${(min * stopPct / acct * 100).toFixed(2)}%${min * stopPct / acct <= .01 ? " (1% 이하라 괜찮음)" : " (1% 초과 → 이 코인은 건너뛰기)"}</div>` : "");
+  // partial take-profits (tp_test.py: 2R/4R thirds held up on both base configs and both periods; +1R exits did worse)
+  // fixed plan (tp3.py): 40% at +1.5R pays for the remaining 60% if it gets stopped (principal safe from there),
+  // then 30% at +3R, 20% at +5R, last 10% rides the trend. Held up best of the 3-step plans on both base configs and periods.
+  const tpv = "1.5:.4,3:.3,5:.2";
+  const tps = (tpv || "").split(",").filter(Boolean).map(x => x.split(":").map(Number));
+  const rest = 1 - tps.reduce((t, [, f]) => t + f, 0), qtyAll = notional / live, oneR = 2 * a;
+  let banked = 0, left = 1, net = -entryFee;                   // R banked / share still open / USDT banked after fees
+  const steps = tps.map(([lv, fr]) => {
+    banked += lv * fr; left -= fr; net += fr * notional * (lv * stopPct - (1 + d * lv * stopPct) * FEE_M);
+    const worst = net - left * notional * (stopPct + (1 - d * stopPct) * FEE_T);   // rest stopped at the ORIGINAL stop
+    return { lv, fr, banked, net, worst, eff: live - d * banked / left * oneR }; });
+  if (plan) plan.tps = tps.map(([lv, fr], i) => ({ price: live + d * lv * oneR, text: `${i + 1}차 익절 ${Math.round(fr * 100)}% (${lv}R)` }));
+  $("ckManage").innerHTML = `<div class="kv"><span>+1R · 손절을 본전으로</span><b style="color:${G}">${fmt(be)}</b></div>`
+    + steps.map((st, i) => `<div class="kv"><span>+${st.lv}R · ${i + 1}차 익절 ${Math.round(st.fr * 100)}%</span><b style="color:${G}">${fmt(live + d * st.lv * oneR)} <small>${(st.fr * qtyAll).toPrecision(3)} ${coin}</small></b></div>`
+      + `<div class="dimrow">${i === 0 ? `→ <b>원금 보전</b> (남은 물량이 원래 손절가까지 가도 ${st.worst >= 0 ? "+" : ""}${st.worst.toFixed(2)} USDT, 수수료만큼) · ` : ""}확보 ${st.net.toFixed(2)} USDT (수수료 뺀) · `
+      + `${d > 0 && st.eff <= 0 ? "남은 물량이 0원이 돼도 이익" : `남은 물량이 ${fmt(st.eff)}까지 ${d > 0 ? "밀려도" : "올라도"} 본전`}</div>`).join("")
+    + `<div class="kv"><span>마지막 ${Math.round(rest * 100)}% · 추세 끝까지</span><b>따라가는 손절</b></div>`
+    + `<div class="dimrow">따라가는 손절 = 가장 좋았던 종가 ${d > 0 ? "−" : "+"} ${fmt(2 * a)} (2 ATR) · 청산: 손절에 닿거나 9시 종가에 ${coin} 신호가 ${d > 0 ? `${FUT.long}개 미만` : `${FUT.short}개 초과`}</div>`;
+  $("ckCost").innerHTML = $("mkt").value !== "perp" ? `<div class="dimrow">현물 화면 (펀딩 없음)</div>`
+    : !funding ? `<div class="dimrow">불러오는 중</div>`
+    : `<div class="kv"><span>이번 정산</span><b style="color:${funding.rate > 0 ? R : G}">${(funding.rate * 100).toFixed(4)}%</b></div>`
+      + `<div class="kv"><span>이 포지션 기준</span><b style="color:${(funding.rate >= 0) === (d > 0) ? R : G}">8시간마다 ${(funding.rate >= 0) === (d > 0) ? "−" : "+"}${(Math.abs(funding.rate) * notional).toFixed(4)} USDT</b></div>`
+      + `<div class="dimrow">${funding.rate >= 0 ? "롱이 숏에게 냄" : "숏이 롱에게 냄"} · 다음 정산 ${new Date(funding.next).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} · 1년 들고 있으면 약 ${(Math.abs(funding.rate) * 3 * 365 * 100).toFixed(0)}%</div>`;
+  const near = prof ? nearest(live) : null, up = near && (near.inside || near.above[0]), dn = near && near.below[0];
+  const leanTag = z => `<span style="color:${LEAN[z.lean][1]}">${LEAN[z.lean][0]}</span>`;
+  $("ckZone").innerHTML = !near ? "" : `<div class="kv"><span>위 저항</span><b>${up ? `${fmt(up.lo)}~${fmt(up.hi)} <small>${sgn(pct(up.lo, live))}</small> · ${leanTag(up)}` : "없음"}</b></div>`
+    + `<div class="kv"><span>아래 지지</span><b>${dn ? `${fmt(dn.lo)}~${fmt(dn.hi)} <small>${sgn(pct(dn.hi, live))}</small> · ${leanTag(dn)}` : "없음"}</b></div>`
+    + `<div class="dimrow">매수 우세 = 그 가격대에서 시장가로 산 돈이 판 돈보다 많았던 곳. 2024~ 백테스트: 아래서 올라와 뚫은 비율 매수 우세 31% · 매도 우세 22%, 위에서 내려와 지지된 비율 67% · 61%. 방향을 정해주진 않고 확률만 조금 바뀜</div>`
+    + `<div class="dimrow">익절 목표 참고용. 매물대를 진입 근거로 쓰면 백테스트 성적이 나빴어요</div>`;
+}
+
+// 50/200-day averages as lines on the daily chart (kept out of the autoscale so they never squash the candles)
+let ma50 = null, ma200 = null;
+function updateMAs() {                                 // 50/200-DAY averages on every interval
+  if (!ma50 || !hist.length) return;
+  const c = hist.map(b => b.close), sma = n => c.map((_, i) => i >= n - 1 ? c.slice(i - n + 1, i + 1).reduce((x, y) => x + y, 0) / n : null);
+  const s50 = sma(50), s200 = sma(200), iv = $("iv").value, span = data.length > 1 ? data[1].time - data[0].time : 86400;
+  // daily/weekly bars: the average at the last day inside the bar; intraday bars: as of the last completed daily close
+  const at = b => dayAt(iv === "1d" || iv === "1w" ? b.time + span - 86400 : b.time - 86400);
+  const line = arr => data.map(b => { const i = at(b); return i >= 0 && arr[i] !== null ? { time: b.time, value: arr[i] } : null; }).filter(Boolean);
+  ma50.setData(line(s50)); ma200.setData(line(s200));
+}
+
+// daily-rule things on any interval: find the chart bar that contains a given moment (binary search; null if not loaded)
+function barAt(t) {
+  if (!data.length || t < data[0].time) return null;
+  let lo = 0, hi = data.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (data[m].time <= t) lo = m; else hi = m - 1; }
+  return data[lo];
+}
+// last daily candle with open time <= t (index into hist), -1 if none
+function dayAt(t) {
+  if (!hist.length || t < hist[0].time) return -1;
+  let lo = 0, hi = hist.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (hist[m].time <= t) lo = m; else hi = m - 1; }
+  return lo;
+}
+
+function markers() {                                   // the rule's past buy/sell days, placed on whatever interval is shown
+  const t0 = todayUTC() / 1000, done = hist.filter(b => b.time - TZ < t0), c = done.map(b => b.close), ms = [];
+  // one marker per chart bar: on bars longer than a day (weekly) a buy and sell inside the same bar cancel out
+  let prevOn = null, cur = null;
+  const flush = () => { if (cur && cur.on !== cur.before) ms.push({ time: cur.time, position: cur.on ? "belowBar" : "aboveBar",
+    color: cur.on ? "#26a69a" : "#ef5350", shape: cur.on ? "arrowUp" : "arrowDown", text: cur.on ? "매수" : "매도" }); };
+  for (let i = 245; i < c.length; i++) {
+    const on = ruleAt(c.slice(i - 240, i + 1)).weight > 0;
+    if (prevOn !== null && on !== prevOn) {
+      const bar = barAt(done[i].time + 86400);         // traded when the next daily candle opens (09:00 KST)
+      if (bar) { if (!cur || cur.time !== bar.time) { flush(); cur = { time: bar.time, before: prevOn, on }; } else cur.on = on; }
+    }
+    prevOn = on;
+  }
+  flush();
+  series.setMarkers(ms);
+}
+
+// ---- volume profile ----
+function profileBars() {
+  const mode = $("pr").value;
+  if (mode === "visible") {
+    const r = chart.timeScale().getVisibleLogicalRange();
+    return r ? data.slice(Math.max(0, Math.floor(r.from)), Math.min(data.length, Math.ceil(r.to) + 1)) : data;
+  }
+  if (mode === "all") return hist;
+  const from = Date.now() / 1000 + TZ - (+mode) * 86400;
+  return hist.filter(b => b.time >= from);
+}
+
+function profile(bars, nb, hl = +$("hl").value) {
+  // equal-percentage (log) bins: with equal-dollar bins a $20k-era day piles into 1-2 bins while a $100k-era day
+  // spreads over 7-8, which fakes heavy "zones" at old low prices on multi-year ranges
+  const lo = Math.min(...bars.map(b => b.low)), hi = Math.max(...bars.map(b => b.high));
+  const ls = Math.log(hi / lo) / nb || 1e-9, vol = new Array(nb).fill(0), raw = new Array(nb).fill(0), rawAge = new Array(nb).fill(0), dl = new Array(nb).fill(0);
+  const edges = Array.from({ length: nb + 1 }, (_, i) => lo * Math.exp(i * ls));
+  const bin = p => Math.min(nb - 1, Math.max(0, Math.floor(Math.log(p / lo) / ls)));
+  const nowT = Date.now() / 1000 + TZ;
+  for (const b of bars) {
+    const a = bin(b.low), z = bin(b.high), age = (nowT - b.time) / 86400, share = b.q / (z - a + 1);
+    const w = hl ? Math.pow(.5, age / hl) : 1;          // time decay: old volume has had time to be sold off
+    const sd = (2 * b.tb - b.q) / (z - a + 1) * w;     // market buys minus market sells, spread like the volume
+    for (let i = a; i <= z; i++) { vol[i] += share * w; raw[i] += share * w; rawAge[i] += share * w * age; dl[i] += sd; }   // age under the chosen weighting
+  }
+  const tot = vol.reduce((s, v) => s + v, 0), base = dl.reduce((s, v) => s + v, 0) / tot;
+  let poc = vol.indexOf(Math.max(...vol)), L = poc, H = poc, acc = vol[poc];
+  while (acc < .7 * tot) {                               // value area: grow toward the heavier neighbour
+    const left = L > 0 ? vol[L - 1] : -1, right = H < nb - 1 ? vol[H + 1] : -1;
+    if (left >= right) acc += vol[--L]; else acc += vol[++H];
+  }
+  // threshold among bins that actually traded: with time decay, near-empty old-price bins would otherwise drag the
+  // 80th percentile down and merge the whole recent range into one giant "zone"
+  const vmax = Math.max(...vol), active = vol.filter(v => v >= .05 * vmax).sort((x, y) => x - y);
+  const cut = active[Math.floor(active.length * .8)];
+  const zones = []; let i = 0;
+  while (i < nb) {
+    if (vol[i] >= cut) {
+      let j = i, s = 0; while (j + 1 < nb && vol[j + 1] >= cut) j++;
+      for (let k = i; k <= j; k++) s += vol[k];
+      let r = 0, ra = 0, d = 0; for (let k = i; k <= j; k++) { r += raw[k]; ra += rawAge[k]; d += dl[k]; }
+      // buy/sell lean vs this coin's own average (deltazone.py: tilts the odds ~5-10pp, never decides the direction)
+      const lean = d / s - base;
+      zones.push({ lo: edges[i], hi: edges[j + 1], share: s / tot, age: ra / r, lean: lean > .001 ? 1 : lean < -.001 ? -1 : 0 }); i = j + 1;
+    } else i++;
+  }
+  // digestion: an old zone that price has re-traded through often lately has likely been sold off by its holders
+  const recent = hist.filter(b => b.time >= nowT - 180 * 86400);
+  for (const z of zones) {
+    z.revisits = recent.filter(b => b.low <= z.hi && b.high >= z.lo).length;
+    z.status = z.age <= 180 ? "최근 형성" : z.revisits >= 10 ? "소화됨" : "미소화";
+  }
+  [...zones].sort((a, b) => b.share - a.share).forEach((z, r) => z.rank = r);   // strongest = most traded
+  return { edges, vol, zones, poc: Math.sqrt(edges[poc] * edges[poc + 1]), val: edges[L], vah: edges[H + 1] };
+}
+
+const LEAN = { 1: ["매수 우세", "#26a69a", "rgba(38,166,154,.8)"], "-1": ["매도 우세", "#ef5350", "rgba(239,83,80,.8)"], 0: ["매수·매도 비슷", "#f0a202", "rgba(240,162,2,.75)"] };
+
+function confirmLines(z, p) {
+  const m = M();
+  return z.hi <= p
+    ? [{ v: z.hi * (1 + m.hold), name: "지지 확인", color: "#26a69a" }, { v: z.lo * (1 - m.brkDn), name: "이탈 확정", color: "#ef5350" }]
+    : [{ v: z.hi * (1 + m.brk), name: "돌파 확정", color: "#26a69a" }, { v: z.lo * (1 - m.rej), name: "거절 확정", color: "#ef5350" }];
+}
+
+function nearest(p) {
+  const above = prof.zones.filter(z => z.lo >= p).sort((a, b) => a.lo - b.lo);
+  const below = prof.zones.filter(z => z.hi <= p).sort((a, b) => b.hi - a.hi);
+  return { above, below, inside: prof.zones.find(z => z.lo < p && p < z.hi) };
+}
+
+function draw(panels = true) {     // panels = also refresh the status strip / detail panel (not needed when only the view moved)
+  // size from the wrapper, never from the canvas itself (that feeds back and grows without bound)
+  const cv = $("overlay"), W = $("chartWrap").clientWidth, H = $("chartWrap").clientHeight, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const nb = $("bins").value === "auto" ? 100 : +$("bins").value;   // fixed, so zones don't shift with window size
+  const bars = profileBars();
+  if (bars.length < 3) return;
+  const key = $("pr").value === "visible" ? null : `${$("pr").value}|${nb}|${hist.length}|${$("hl").value}`;
+  if (!key || key !== profKey) { prof = profile(bars, nb); profKey = key; }
+  const p = nowPrice(), near = nearest(p);
+  const paneW = chart.timeScale().width(), y = v => series.priceToCoordinate(v), barMax = paneW * .2;
+  // bands for every zone; top five numbered; nearest support/resistance always labeled
+  const labels = [], lineLabels = [];
+  // nearest zones / bot line that are off-screen get an edge tag with their distance
+  const edge = { top: [], bottom: [] };
+  const tag = (v, text, color) => { const yy = y(v); if (yy === null) return; if (yy < 8) edge.top.push({ text, color }); else if (yy > H - 30) edge.bottom.push({ text, color }); };
+  const hline = (v, color, dash, w) => { const yy = y(v); if (yy === null) return;
+    g.setLineDash(dash); g.strokeStyle = color; g.lineWidth = w; g.beginPath(); g.moveTo(0, yy); g.lineTo(paneW, yy); g.stroke(); g.setLineDash([]); };
+  for (const z of prof.zones) {
+    for (const c of confirmLines(z, p)) {
+      const col = z.status === "소화됨" ? c.color + "70" : c.color;
+      hline(c.v, col, [2, 4], 1.1);
+      lineLabels.push({ y: y(c.v), text: `${c.name} ${fmt(c.v)}`, color: col });
+    }
+    const y1 = y(z.hi), y0 = y(z.lo); if (y1 === null || y0 === null) continue;
+    g.fillStyle = z.status === "소화됨" ? "rgba(240,162,2,.05)" : z.rank < 5 ? `rgba(240,162,2,${.2 - z.rank * .025})` : "rgba(240,162,2,.07)";
+    g.fillRect(0, y1, paneW, y0 - y1);
+    const tag = z === near.above[0] ? "▲ 바로 위 저항 " : z === near.below[0] ? "▼ 바로 아래 지지 " : z === near.inside ? "◆ 현재 위치 " : "";
+    if (z.rank < 5 || tag) labels.push({ y: (y0 + y1) / 2, color: z.status === "소화됨" ? "#9a8a60" : null,
+      text: `${tag}${z.rank < 5 ? RANK[z.rank] + " " : ""}${fmt(z.lo)}~${fmt(z.hi)} · ${(z.share * 100).toFixed(0)}% · ${z.status} · ${LEAN[z.lean][0]}` });
+  }
+  // histogram on the right edge of the price pane; zone bars coloured by who was more aggressive there
+  const maxV = Math.max(...prof.vol);
+  prof.vol.forEach((v, i) => {
+    const a = prof.edges[i], y1 = y(prof.edges[i + 1]), y0 = y(a); if (y1 === null || y0 === null) return;
+    const zz = prof.zones.find(z => a >= z.lo - 1e-9 && a < z.hi - 1e-9), w = v / maxV * barMax;
+    g.fillStyle = !zz ? "rgba(138,144,160,.35)" : LEAN[zz.lean][2];
+    g.fillRect(paneW - w, y1 + .5, w, Math.max(1, y0 - y1 - 1));
+  });
+  hline(prof.poc, "#ff6b3d", [], 1.3); hline(prof.vah, "#ff6b3d", [5, 4], .9); hline(prof.val, "#ff6b3d", [5, 4], .9);
+  labels.push({ y: y(prof.poc), text: `POC ${fmt(prof.poc)}`, color: "#ff6b3d" });
+  if (plan) {                                             // the futures plan from the check panel
+    hline(plan.stop, "#ef5350", [6, 4], 1.4);
+    labels.push({ y: y(plan.stop), text: `${plan.preview ? "(미리보기) " : ""}${plan.dir > 0 ? "롱" : "숏"} 손절 (2 ATR) ${fmt(plan.stop)}`, color: "#ef5350" });
+    hline(plan.be, "#26a69a", [6, 4], 1.2);
+    labels.push({ y: y(plan.be), text: `+1R → 손절을 본전으로 ${fmt(plan.be)}`, color: "#26a69a" });
+    for (const t of plan.tps || []) { hline(t.price, "#26a69a", [2, 3], 1.2); labels.push({ y: y(t.price), text: `${t.text} ${fmt(t.price)}`, color: "#26a69a" }); }
+  }
+  for (const [n, col] of [[50, "#f7c948"], [200, "#ce93d8"]]) {
+    const m = sma(dailyCloses, n); if (m) labels.push({ y: y(m), text: `${n}일선 ${fmt(m)}`, color: col });
+  }
+  if (near.above[0]) tag(near.above[0].lo, `▲ 저항 ${fmt(near.above[0].lo)}~${fmt(near.above[0].hi)} (${sgn(pct(near.above[0].lo, p))})`, "#f0a202");
+  if (near.below[0]) tag(near.below[0].hi, `▼ 지지 ${fmt(near.below[0].lo)}~${fmt(near.below[0].hi)} (${sgn(pct(near.below[0].hi, p))})`, "#f0a202");
+  // where the profile's period starts (zones only reflect trades to the right of this line)
+  if (/^\d+$/.test($("pr").value) && bars.length) {
+    const first = data.find(b => b.time >= bars[0].time), x = first && data[0].time < bars[0].time ? chart.timeScale().timeToCoordinate(first.time) : null;
+    if (x !== null && x > 0 && x < paneW) {
+      g.strokeStyle = "#8a90a0"; g.lineWidth = 1; g.setLineDash([6, 5]); g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H - 28); g.stroke(); g.setLineDash([]);
+      const t = `매물대 계산 시작 (${$("pr").selectedOptions[0].text}) ▶`, w = (g.font = "11px -apple-system, sans-serif", g.measureText(t).width);
+      g.fillStyle = "rgba(19,23,34,.9)"; g.fillRect(x + 4, 6, w + 10, 18); g.fillStyle = "#c9ccd4"; g.fillText(t, x + 9, 19);
+    }
+  }
+  // labels on a dark plate, nudged apart so they never overlap: zones right (next to the histogram), confirmation lines left
+  const place = (list, font, xOf) => { g.font = font;
+    list.filter(l => l.y !== null && l.y > 8 && l.y < H - 30).sort((a, b) => a.y - b.y)
+      .reduce((lastY, l) => { const yy = Math.max(l.y, lastY + 18), w = g.measureText(l.text).width, x = xOf(w);
+        g.fillStyle = "rgba(19,23,34,.85)"; g.fillRect(x - 5, yy - 10, w + 10, 19);
+        g.fillStyle = l.color || "#f0a202"; g.fillText(l.text, x, yy + 4); return yy; }, -100); };
+  place(labels, "bold 12px -apple-system, sans-serif", w => paneW - barMax - 12 - w);
+  place(lineLabels, "11px -apple-system, sans-serif", () => 50);
+  drawShapes(g, y, paneW, H);
+  g.font = "bold 12px -apple-system, sans-serif";
+  for (const [pos, list] of Object.entries(edge)) list.forEach((t, i) => {
+    const w = g.measureText(t.text).width, x = paneW - barMax - 12 - w, yy = pos === "top" ? 16 + i * 21 : H - 46 - i * 21;
+    g.fillStyle = "rgba(19,23,34,.92)"; g.fillRect(x - 6, yy - 11, w + 12, 20);
+    g.strokeStyle = t.color; g.lineWidth = 1; g.setLineDash([]); g.strokeRect(x - 6, yy - 11, w + 12, 20);
+    g.fillStyle = t.color; g.fillText(t.text, x, yy + 4); });
+  if (panels) signal();
+}
+
+function initChart() {
+  if (chart) chart.remove();
+  chart = LightweightCharts.createChart($("chart"), {
+    autoSize: true,
+    layout: { background: { color: "#131722" }, textColor: "#d1d4dc", fontSize: 12 },
+    grid: { vertLines: { color: "#1c2130" }, horzLines: { color: "#1c2130" } },
+    rightPriceScale: { borderColor: "#2a3042", scaleMargins: { top: .06, bottom: .15 }, mode: +$("scale").value },
+    timeScale: { borderColor: "#2a3042", timeVisible: /[mh]$/.test($("iv").value), rightOffset: 6, barSpacing: 8 },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  });
+  series = chart.addCandlestickSeries({
+    upColor: "#26a69a", downColor: "#ef5350", borderVisible: false, wickUpColor: "#26a69a", wickDownColor: "#ef5350", priceLineColor: "#2962ff",
+    // keep the nearest resistance and support zone on screen (within ±40%) so targets are always visible
+    autoscaleInfoProvider: orig => {
+      const r = orig(), p = nowPrice();
+      if (!r || !prof || !p || $("pr").value === "visible") return r;
+      const { above, below } = nearest(p), up = above[0], dn = below[0];
+      let { minValue, maxValue } = r.priceRange;
+      // pull the nearest zones into view only when they are close for this interval (keeps 1m/5m candles readable)
+      const reach = { "1m": .015, "5m": .02, "15m": .03, "1h": .05, "4h": .12 }[$("iv").value] ?? .4;
+      if (up && up.hi < p * (1 + reach)) maxValue = Math.max(maxValue, up.hi);
+      if (dn && dn.lo > p * (1 - reach)) minValue = Math.min(minValue, dn.lo);
+      return { priceRange: { minValue, maxValue }, margins: r.margins };
+    },
+  });
+  const maOpt = { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: () => null };
+  ma50 = chart.addLineSeries({ ...maOpt, color: "#f7c948" });
+  ma200 = chart.addLineSeries({ ...maOpt, color: "#ce93d8", lineWidth: 2 });
+  // volume bars in the bottom 13% (the candle scale leaves that strip free)
+  volume = chart.addHistogramSeries({ priceScaleId: "vol", priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false });
+  chart.priceScale("vol").applyOptions({ scaleMargins: { top: .87, bottom: 0 } });
+  chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
+  chart.subscribeCrosshairMove(prm => { hoverBar = (prm.time !== undefined && prm.seriesData.get(series)) || null; showOHLC(); dirty = true; });
+}
+
+let volume = null;
+const volBar = b => ({ time: b.time, value: b.q, color: b.close >= b.open ? "rgba(38,166,154,.45)" : "rgba(239,83,80,.45)" });
+function setAll() { series.setData(data); volume.setData(data.map(volBar)); markers(); updateMAs(); }
+
+async function onRange(r) {
+  dirty = true;
+  if (!r || loadingOld || !hasMore || r.from > 30) return;
+  loadingOld = true;                                  // scrolled near the left edge: load older candles
+  try {
+    const older = await klines($("iv").value, (data[0].time - TZ) * 1000 - 1);
+    const fresh = older.filter(b => b.time < data[0].time);
+    if (!fresh.length) { hasMore = false; return; }
+    const cur = chart.timeScale().getVisibleLogicalRange();
+    data = fresh.concat(data);
+    setAll();
+    if (cur) chart.timeScale().setVisibleLogicalRange({ from: cur.from + fresh.length, to: cur.to + fresh.length });
+  } catch (e) { $("upd").textContent = "과거 데이터 오류: " + e.message; }
+  finally { loadingOld = false; }
+}
+
+function connect() {
+  if (ws) { ws.onclose = null; ws.close(); }
+  ws = new WebSocket(wsUrl());
+  ws.onopen = () => $("dot").style.background = "#26a69a";
+  ws.onclose = () => { $("dot").style.background = "#ef5350"; setTimeout(connect, 3000); };
+  ws.onmessage = e => {
+    const k = JSON.parse(e.data).k; if (!k) return;
+    const bar = toBar([k.t, k.o, k.h, k.l, k.c, k.v, 0, k.q, 0, 0, k.Q]), last = data[data.length - 1];
+    if (last && bar.time === last.time) data[data.length - 1] = bar; else if (!last || bar.time > last.time) data.push(bar);
+    series.update(bar); volume.update(volBar(bar));
+    const prev = livePrice; livePrice = bar.close;
+    $("price").textContent = fmt(livePrice); $("price").style.color = prev === null || livePrice >= prev ? "#26a69a" : "#ef5350";
+    $("upd").textContent = "실시간 " + new Date().toLocaleTimeString("ko-KR");
+    dirty = true;
+  };
+}
+
+async function start() {
+  loadShapes(); loadFunding();
+  initChart(); data = []; hist = []; prof = null; profKey = null; hasMore = true; livePrice = null;
+  try {
+    $("upd").textContent = "과거 데이터 불러오는 중…";
+    [data] = await Promise.all([klines($("iv").value), loadDaily(true)]);
+    setAll();
+    const n = { "1d": 180, "1w": 150 }[$("iv").value] || 200;
+    chart.timeScale().setVisibleLogicalRange({ from: data.length - n, to: data.length + 5 });
+  } catch (e) { $("upd").textContent = "데이터 오류: " + e.message; return; }
+  connect();
+}
+
+["sym", "mkt", "iv"].forEach(id => $(id).addEventListener("change", start));
+const setDetail = on => { document.body.classList.toggle("detail", on); $("detailBtn").textContent = on ? "체크 ◂" : "체크 ▸"; dirty = true;
+  try { localStorage.setItem("checkPanel", on ? "1" : "0"); } catch {} };
+$("detailBtn").addEventListener("click", () => setDetail(!document.body.classList.contains("detail")));
+try { setDetail(localStorage.getItem("checkPanel") !== "0"); } catch { setDetail(true); }
+for (const [id, def] of [["acct", 367]]) {
+  try { $(id).value = localStorage.getItem(id) ?? def; } catch { $(id).value = def; }
+  for (const ev of ["input", "change"]) $(id).addEventListener(ev, () => { try { localStorage.setItem(id, $(id).value); } catch {} dirty = true; });
+}
+$("mkt").addEventListener("change", () => { try { localStorage.setItem("mkt", $("mkt").value); } catch {} });
+["pr", "bins", "hl"].forEach(id => $(id).addEventListener("change", () => { profKey = null; dirty = true; chart.timeScale().applyOptions({}); }));
+$("scale").addEventListener("change", () => { chart.priceScale("right").applyOptions({ mode: +$("scale").value }); dirty = true; });
+// the overlay is redrawn in the same frame the chart's view changes (zoom, scroll, price-axis drag, autoscale),
+// so boxes and lines never lag behind the candles; the status strip / panels refresh on data changes and twice a second
+let lastSig = "";
+const viewSig = () => { const r = chart.timeScale().getVisibleLogicalRange(), ref = data[data.length - 1].close;
+  return [r && r.from, r && r.to, series.priceToCoordinate(ref), series.priceToCoordinate(ref * 1.05), $("chartWrap").clientWidth, $("chartWrap").clientHeight].join("|"); };
+(function loop() {
+  if (series && data.length && hist.length) {
+    const sig = viewSig();
+    if (dirty) { dirty = false; lastSig = sig; draw(true); }
+    else if (sig !== lastSig) { lastSig = sig; draw(false); }
+  }
+  requestAnimationFrame(loop);
+})();
+setInterval(() => dirty = true, 500);
+$("fitBtn").addEventListener("click", () => { chart.priceScale("right").applyOptions({ autoScale: true }); chart.timeScale().scrollToRealTime(); });
+// free drag in every direction: the chart library only scrolls the price axis while auto-fit is off, so switch it off when a
+// press starts and switch it back on if the drag turned out to be horizontal (맞춤 or a double-click on the price axis re-fits)
+let pressX = null, pressY = null, wasAuto = false;
+$("chartWrap").addEventListener("pointerdown", e => {
+  if (e.target.closest("#tools")) return;
+  const ps = chart.priceScale("right"); wasAuto = ps.options().autoScale; pressX = e.clientX; pressY = e.clientY;
+  if (wasAuto) ps.applyOptions({ autoScale: false });
+}, true);
+window.addEventListener("pointerup", e => {
+  if (pressY === null) return;
+  if (wasAuto && Math.abs(e.clientY - pressY) < 6) chart.priceScale("right").applyOptions({ autoScale: true });
+  if (Math.hypot(e.clientX - pressX, e.clientY - pressY) < 5) { const r = $("chartWrap").getBoundingClientRect(); chartClick(e.clientX - r.left, e.clientY - r.top); }
+  pressX = pressY = null;
+}, true);
+$("chartWrap").addEventListener("pointermove", e => {       // live preview while placing
+  if (!pending && tool !== "h") return;
+  const r = $("chartWrap").getBoundingClientRect(), t = xToTime(e.clientX - r.left), p = series.coordinateToPrice(e.clientY - r.top);
+  mouse = t === null || p === null ? null : { t, p }; lastSig = "";
+});
+document.querySelectorAll("#tools button[data-tool]").forEach(b => b.addEventListener("click", () => setTool(b.dataset.tool)));
+$("viewDir").addEventListener("change", () => dirty = true);
+$("clearDraw").addEventListener("click", () => { if (shapes.length && confirm("그린 것을 전부 지울까요?")) { shapes = []; saveShapes(); setTool(""); } });
+document.addEventListener("keydown", e => { if (e.key === "Escape") setTool(""); });
+setInterval(() => loadDaily(false).then(() => { markers(); updateMAs(); }).catch(() => {}), 60000);
+setInterval(loadFunding, 60000);   // new daily close after 09:00 KST
+// the view lives in the URL (?sym=SOLUSDT&mkt=perp&pr=365 ...) so a link reopens exactly this chart
+const VIEW = ["sym", "mkt", "iv", "pr", "hl", "bins", "scale"];
+new URLSearchParams(location.search).forEach((v, k) => { if (VIEW.includes(k) && [...$(k).options].some(o => o.value === v)) $(k).value = v; });
+const saveView = () => history.replaceState(null, "", "?" + new URLSearchParams(VIEW.map(k => [k, $(k).value])));
+VIEW.forEach(k => $(k).addEventListener("change", saveView));
+saveView();
+start();
+</script>
+</body>
+</html>
