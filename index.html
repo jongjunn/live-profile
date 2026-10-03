@@ -96,8 +96,10 @@
     <div class="card"><div class="ck-h">① 방향</div><div id="ckDir"></div></div>
     <div class="card"><div class="ck-h">② 손절 · 포지션 크기</div>
       <div class="inrow">보기 <select id="viewDir"><option value="">신호 방향대로</option><option value="1">롱으로 미리보기</option><option value="-1">숏으로 미리보기</option></select></div>
-      <div class="inrow">선물 지갑 <input id="acct" type="number" min="1" step="any"> USDT · 주문 금액 = 지갑의 10% 고정</div>
-      <div id="ckPlan"></div></div>
+      <div class="inrow">진입가 <input id="entry" type="number" min="0" step="any" placeholder="지금 가격" style="width:86px"> <button id="entryNow" type="button">지금 가격으로</button></div>
+      <div class="dimrow" style="margin-top:0">비워두면 지금 가격으로 계산 · 들어간 뒤 체결가를 넣으면 손절·익절 가격이 고정돼요</div>
+      <div id="ckPlan"></div>
+      <div class="inrow" style="margin-top:8px">기준 지갑 <input id="acct" type="number" min="1" step="any"> USDT · 주문 금액은 항상 지갑의 10%</div></div>
     <div class="card"><div class="ck-h">③ 3단 익절 · 10%는 추세 끝까지</div>
       <div id="ckManage"></div></div>
     <div class="card"><div class="ck-h">④ 보유 비용 (펀딩)</div><div id="ckCost"></div></div>
@@ -358,7 +360,9 @@ function check(now, live) {
   plan = null;
   if (!a) { $("ckPlan").innerHTML = `<div class="dimrow">ATR 계산 대기</div>`; $("ckManage").innerHTML = ""; return; }
   const force = +$("viewDir").value, d = force || dir || 1, preview = !dir || (force && force !== dir);
-  const stop = live - d * 2 * a, stopPct = 2 * a / live, be = live + d * 2 * a;
+  // a typed entry keeps the ATR from the moment it was typed, so its stop / take-profits stay put as new days come in
+  const typed = +$("entry").value > 0, ent = typed ? +$("entry").value : live, oneR = 2 * (typed && entryAtr || a);
+  const stop = ent - d * oneR, stopPct = oneR / ent, be = ent + d * oneR;
   // order size fixed at 10% of the futures wallet (user's choice); the loss at the stop follows from the stop distance
   const acct = +$("acct").value || 0, notional = acct * .1;
   // Binance USDⓈ-M regular fees: maker 0.02% (limit take-profits), taker 0.05% (market entry, stop-market exit)
@@ -367,12 +371,13 @@ function check(now, live) {
   const lev = notional / Math.max(acct, 1e-9), min = MIN_NOTIONAL[$("sym").value] ?? 5;
   // cross margin: the whole futures wallet backs the position, so liquidation is where the loss eats the wallet
   // (rough: ignores other open positions and maintenance tiers)
-  const qty = notional / live, liqX = live - d * (acct - .005 * notional) / Math.max(qty, 1e-12);
+  const qty = notional / ent, liqX = ent - d * (acct - .005 * notional) / Math.max(qty, 1e-12);
   const liqNone = d > 0 ? liqX <= 0 : false, liqOk = d > 0 ? liqX < stop : liqX > stop;
   if (dir || force) plan = { dir: d, stop, be, preview };
   $("ckPlan").innerHTML = (preview ? `<div class="dimrow">지금 신호는 ${dir > 0 ? "롱" : dir < 0 ? "숏" : "대기"} · 아래는 <b>${d > 0 ? "롱" : "숏"}</b>으로 들어간다면의 참고값</div>` : "")
+    + (typed ? `<div class="kv"><span>지금 손익</span><b style="color:${d * (live - ent) >= 0 ? G : R}">${sgn(d * pct(live, ent))} · ${(d * (live - ent) * qty).toFixed(2)} USDT · ${(d * (live - ent) / oneR).toFixed(2)}R</b></div>` : "")
     + `<div class="kv"><span>손절가 (2 ATR)</span><b style="color:${R}">${fmt(stop)} <small>${sgn(-d * stopPct * 100)}</small></b></div>`
-    + `<div class="kv"><span>주문 금액 (포지션)</span><b>${notional.toFixed(1)} USDT <small>${(notional / live).toPrecision(3)} ${coin}</small></b></div>`
+    + `<div class="kv"><span>주문 금액 (포지션)</span><b>${notional.toFixed(1)} USDT <small>${qty.toPrecision(3)} ${coin}</small></b></div>`
     + `<div class="kv"><span>필요 레버리지</span><b>${lev <= 1 ? "1배로 충분" : lev.toFixed(1) + "배"}</b></div>`
     + `<div class="kv"><span>크로스 청산가 (약)</span><b style="color:${liqOk ? G : R}">${liqNone ? "사실상 없음" : fmt(liqX) + (liqOk ? " ✓" : " ✗")}</b></div>`
     + `<div class="dimrow">크로스는 지갑 전체가 증거금 → 거래소에 손절(스탑마켓) 주문 꼭 걸기</div>`
@@ -384,15 +389,15 @@ function check(now, live) {
   // then 30% at +3R, 20% at +5R, last 10% rides the trend. Held up best of the 3-step plans on both base configs and periods.
   const tpv = "1.5:.4,3:.3,5:.2";
   const tps = (tpv || "").split(",").filter(Boolean).map(x => x.split(":").map(Number));
-  const rest = 1 - tps.reduce((t, [, f]) => t + f, 0), qtyAll = notional / live, oneR = 2 * a;
+  const rest = 1 - tps.reduce((t, [, f]) => t + f, 0), qtyAll = qty;
   let banked = 0, left = 1, net = -entryFee;                   // R banked / share still open / USDT banked after fees
   const steps = tps.map(([lv, fr]) => {
     banked += lv * fr; left -= fr; net += fr * notional * (lv * stopPct - (1 + d * lv * stopPct) * FEE_M);
     const worst = net - left * notional * (stopPct + (1 - d * stopPct) * FEE_T);   // rest stopped at the ORIGINAL stop
-    return { lv, fr, banked, net, worst, eff: live - d * banked / left * oneR }; });
-  if (plan) plan.tps = tps.map(([lv, fr], i) => ({ price: live + d * lv * oneR, text: `${i + 1}차 익절 ${Math.round(fr * 100)}% (${lv}R)` }));
+    return { lv, fr, banked, net, worst, eff: ent - d * banked / left * oneR }; });
+  if (plan) plan.tps = tps.map(([lv, fr], i) => ({ price: ent + d * lv * oneR, text: `${i + 1}차 익절 ${Math.round(fr * 100)}% (${lv}R)` }));
   $("ckManage").innerHTML = `<div class="kv"><span>+1R · 손절을 본전으로</span><b style="color:${G}">${fmt(be)}</b></div>`
-    + steps.map((st, i) => `<div class="kv"><span>+${st.lv}R · ${i + 1}차 익절 ${Math.round(st.fr * 100)}%</span><b style="color:${G}">${fmt(live + d * st.lv * oneR)} <small>${(st.fr * qtyAll).toPrecision(3)} ${coin}</small></b></div>`
+    + steps.map((st, i) => `<div class="kv"><span>+${st.lv}R · ${i + 1}차 익절 ${Math.round(st.fr * 100)}%</span><b style="color:${G}">${fmt(ent + d * st.lv * oneR)} <small>${(st.fr * qtyAll).toPrecision(3)} ${coin}</small></b></div>`
       + `<div class="dimrow">${i === 0 ? `→ <b>원금 보전</b> (남은 물량이 원래 손절가까지 가도 ${st.worst >= 0 ? "+" : ""}${st.worst.toFixed(2)} USDT, 수수료만큼) · ` : ""}확보 ${st.net.toFixed(2)} USDT (수수료 뺀) · `
       + `${d > 0 && st.eff <= 0 ? "남은 물량이 0원이 돼도 이익" : `남은 물량이 ${fmt(st.eff)}까지 ${d > 0 ? "밀려도" : "올라도"} 본전`}</div>`).join("")
     + `<div class="kv"><span>마지막 ${Math.round(rest * 100)}% · 추세 끝까지</span><b>따라가는 손절</b></div>`
@@ -680,8 +685,11 @@ function connect() {
   };
 }
 
+const entryKey = () => `entry_${$("mkt").value}_${$("sym").value}`;
+let entryAtr = null;
 async function start() {
   loadShapes(); loadFunding();
+  try { const e = JSON.parse(localStorage.getItem(entryKey()) || "{}"); $("entry").value = e.p ?? ""; entryAtr = e.a ?? null; } catch {}
   initChart(); data = []; hist = []; prof = null; profKey = null; hasMore = true; livePrice = null;
   try {
     $("upd").textContent = "과거 데이터 불러오는 중…";
@@ -703,6 +711,9 @@ for (const [id, def] of [["acct", 367]]) {
   for (const ev of ["input", "change"]) $(id).addEventListener(ev, () => { try { localStorage.setItem(id, $(id).value); } catch {} dirty = true; });
 }
 $("mkt").addEventListener("change", () => { try { localStorage.setItem("mkt", $("mkt").value); } catch {} });
+const saveEntry = () => { entryAtr = atr14(); try { localStorage.setItem(entryKey(), JSON.stringify({ p: $("entry").value, a: entryAtr })); } catch {} dirty = true; };
+for (const ev of ["input", "change"]) $("entry").addEventListener(ev, saveEntry);
+$("entryNow").addEventListener("click", () => { const p = nowPrice(); if (p) { $("entry").value = +p.toPrecision(6); saveEntry(); } });
 ["pr", "bins", "hl"].forEach(id => $(id).addEventListener("change", () => { profKey = null; dirty = true; chart.timeScale().applyOptions({}); }));
 $("scale").addEventListener("change", () => { chart.priceScale("right").applyOptions({ mode: +$("scale").value }); dirty = true; });
 // the overlay is redrawn in the same frame the chart's view changes (zoom, scroll, price-axis drag, autoscale),
