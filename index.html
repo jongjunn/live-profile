@@ -324,7 +324,8 @@ function signal() {
 }
 
 // ---- 선물 체크: what to look at before a manual futures trade, from the system in wf_fut.py (current quarter's pick) ----
-const MIN_NOTIONAL = { BTCUSDT: 50, ETHUSDT: 20, SOLUSDT: 5 };      // Binance USDⓈ-M minimum order value
+// Binance USDⓈ-M minimum order: value AND quantity (BTC 0.001 ≈ 85 USDT is the real floor, not the 50 USDT value)
+const MIN_NOTIONAL = { BTCUSDT: 50, ETHUSDT: 20, SOLUSDT: 5 }, MIN_QTY = { BTCUSDT: .001, ETHUSDT: .001, SOLUSDT: .01 };
 let plan = null, funding = null;
 const sma = (c, n) => c.length >= n ? c.slice(-n).reduce((a, b) => a + b, 0) / n : null;
 function atr14() {
@@ -368,7 +369,7 @@ function check(now, live) {
   // Binance USDⓈ-M regular fees: maker 0.02% (limit take-profits), taker 0.05% (market entry, stop-market exit)
   const FEE_M = .0002, FEE_T = .0005, entryFee = notional * FEE_T, stopFee = notional * (1 - d * stopPct) * FEE_T;
   const lossAll = notional * stopPct + entryFee + stopFee, risk = lossAll / Math.max(acct, 1e-9);
-  const lev = notional / Math.max(acct, 1e-9), min = MIN_NOTIONAL[$("sym").value] ?? 5;
+  const lev = notional / Math.max(acct, 1e-9), min = Math.max(MIN_NOTIONAL[$("sym").value] ?? 5, (MIN_QTY[$("sym").value] ?? 0) * ent);
   // cross margin: the whole futures wallet backs the position, so liquidation is where the loss eats the wallet
   // (rough: ignores other open positions and maintenance tiers)
   const qty = notional / ent, liqX = ent - d * (acct - .005 * notional) / Math.max(qty, 1e-12);
@@ -383,7 +384,7 @@ function check(now, live) {
     + `<div class="dimrow">크로스는 지갑 전체가 증거금 → 거래소에 손절(스탑마켓) 주문 꼭 걸기</div>`
     + `<div class="dimrow">손절되면 −${lossAll.toFixed(2)} USDT (수수료 ${(entryFee + stopFee).toFixed(3)} 포함) = 지갑의 <b style="color:${risk > .01 ? R : G}">${(risk * 100).toFixed(2)}%</b>${risk > .01 ? " (1% 초과)" : ""} · 롱·숏 같음</div>`
     + `<div class="dimrow">수수료: 시장가 진입 0.05% · 지정가 익절 0.02% · 스탑마켓 손절 0.05% (BNB로 내면 10% 할인)</div>`
-    + (notional < min ? `<div class="warn">바이낸스 최소 주문 ${min} USDT 미만 → 최소 ${min} USDT로 들어가면 손절 시 지갑의 ${(min * stopPct / acct * 100).toFixed(2)}%${min * stopPct / acct <= .01 ? " (1% 이하라 괜찮음)" : " (1% 초과 → 이 코인은 건너뛰기)"}</div>` : "");
+    + (notional < min ? `<div class="warn">바이낸스 최소 주문 ${min.toFixed(1)} USDT${MIN_QTY[$("sym").value] ? ` (${MIN_QTY[$("sym").value]} ${coin})` : ""} 미만 → 최소로 들어가면 손절 시 지갑의 ${(min * stopPct / acct * 100).toFixed(2)}%${min * stopPct / acct <= .01 ? " (1% 이하라 괜찮음)" : " (1% 초과 → 이 코인은 건너뛰기)"}</div>` : "");
   // partial take-profits (tp_test.py: 2R/4R thirds held up on both base configs and both periods; +1R exits did worse)
   // fixed plan (tp3.py): 40% at +1.5R pays for the remaining 60% if it gets stopped (principal safe from there),
   // then 30% at +3R, 20% at +5R, last 10% rides the trend. Held up best of the 3-step plans on both base configs and periods.
