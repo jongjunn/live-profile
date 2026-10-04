@@ -414,7 +414,7 @@ function check(now, live) {
   const refs = [
     [bma === null ? null : (bLast > bma) === L, "장세 (BTC 200일선)", bma === null ? "-" : bLast > bma ? "상승장" : "하락장"],
     [ma50 === null ? null : (live > ma50) === L, "50일선", ma50 === null ? "-" : `${live > ma50 ? "위" : "아래"} ${sgn(pct(live, ma50))}`],
-    [fr === null ? null : !hot, "펀딩 과열 아님", fr === null ? "-" : `${(fr * 100).toFixed(4)}% · 8시간 ${usd((fr >= 0) === L ? -Math.abs(fr) * size : Math.abs(fr) * size)}`],
+    [fr === null ? null : !hot, "펀딩 과열 아님", fr === null ? "-" : `${(fr * 100).toFixed(4)}% · 8시간 ${(fr >= 0) === L ? "−" : "+"}${(Math.abs(fr) * size).toFixed(4)}`],
     [prof ? !block : null, "1차 익절 전 매물대 없음", block ? `${fmt(block.lo)}~${fmt(block.hi)}` : "없음"],
     [!way || !way.lean ? null : way.lean === d, "길목 매물대 쏠림", way ? LEAN[way.lean][0] : "없음"],
   ];
