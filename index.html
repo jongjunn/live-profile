@@ -34,8 +34,6 @@
   .tk-head .t { font-size:13px; color:var(--dim); } .tk-head .t b { color:var(--text); font-size:15px; margin-right:3px; }
   .tk-head select { padding:3px 6px; font-size:12px; }
   .verdict { font-size:30px; font-weight:800; letter-spacing:-.5px; line-height:1.2; margin-top:6px; }
-  .votes { display:grid; grid-template-columns:38px 1fr auto; align-items:center; gap:8px; margin-top:5px; font-size:12px; color:var(--dim); }
-  .votes b { color:var(--text); font-variant-numeric:tabular-nums; }
   .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; }
   .rule { height:1px; background:var(--line); margin:14px 0 12px; }
   .inputs { display:grid; grid-template-columns:1fr 92px; gap:8px; align-items:end; }
@@ -62,10 +60,12 @@
   .lv.entry { --c:#2962ff; background:rgba(41,98,255,.09); border-radius:8px; }
   .lv-h { display:grid; grid-template-columns:1fr auto 62px; gap:8px; padding:0 4px 2px 24px; font-size:11px; color:#5d6475; text-align:right; }
   .lv-foot { font-size:11.5px; color:var(--dim); margin:4px 0 0 24px; }
-  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; }
-  .stat span { display:block; font-size:11px; color:var(--dim); } .stat b { font-size:14px; font-variant-numeric:tabular-nums; }
-  .warn { margin-top:12px; padding:8px 10px; border-radius:6px; background:rgba(239,83,80,.1); color:#ff8a87; font-size:12px; font-weight:600; line-height:1.45; }
-  .warn.soft { background:rgba(240,162,2,.1); color:#f5b942; }
+  .crit { margin-top:12px; }
+  .crit-h { display:flex; align-items:baseline; gap:6px; font-size:12px; color:var(--dim); margin:10px 0 3px; }
+  .crit-h b { font-size:15px; font-variant-numeric:tabular-nums; } .crit-h .ok { color:var(--up); } .crit-h .no { color:var(--down); }
+  .cr { display:grid; grid-template-columns:18px 1fr auto; gap:6px; align-items:center; padding:3px 0; font-size:12.5px; }
+  .cr .ic { font-weight:800; text-align:center; } .cr.ok .ic { color:var(--up); } .cr.no .ic { color:var(--down); } .cr.mid .ic { color:var(--dim); }
+  .cr .vl { color:var(--dim); font-variant-numeric:tabular-nums; text-align:right; } .cr.no .vl { color:#ff8a87; }
   .tk-foot { margin-top:14px; font-size:10.5px; color:#5d6475; }
   .dim { color:var(--dim); font-size:12px; }
   @media (max-width: 760px) { body { height:auto; } .chip { white-space:normal; } main { flex-direction:column; height:auto; } #chartWrap { flex:none; height:65vh; } aside { width:100%; } }
@@ -106,6 +106,7 @@
     <div class="tk-head"><div class="t"><b id="ckCoin"></b>선물</div>
       <select id="viewDir" title="다른 방향으로 미리보기"><option value="">신호대로</option><option value="1">롱으로</option><option value="-1">숏으로</option></select></div>
     <div id="ckDir"></div>
+    <div id="ckCrit"></div>
     <div class="rule"></div>
     <div class="inputs">
       <label class="field"><span>진입가</span><div class="in"><input id="entry" type="number" min="0" step="any" placeholder="지금 가격"><button id="entryNow" type="button">지금가</button></div></label>
@@ -114,9 +115,6 @@
     <div class="order" id="ckOrder"></div>
     <div class="rule"></div>
     <div id="ckLadder"></div>
-    <div class="rule"></div>
-    <div class="stats" id="ckCost"></div>
-    <div id="ckWarn"></div>
     <div class="tk-foot">데모로 검증 중인 규칙이에요. 투자 조언 아님.</div>
   </aside>
 </main>
@@ -359,13 +357,12 @@ function check(now, live) {
   const coin = $("sym").value.replace("USDT", ""), G = "#26a69a", R = "#ef5350", D = "#8a90a0";
   const btc = btcCloses.length >= 250 ? ruleAt(btcCloses) : null, v = now.votes, vb = btc ? btc.votes : null;
   const dir = vb === null ? 0 : v >= FUT.long && vb >= FUT.btcLong ? 1 : v <= FUT.short && vb <= FUT.btcShort ? -1 : 0;
-  const votes = (name, n, lights) => `<div class="votes"><span>${name}</span><span>${lights.map(l => `<i class="dot" style="background:${l.up ? G : "#3a4152"}"></i>`).join("")}</span><b>${n}/6</b></div>`;
+  const dots = lights => lights.map(l => `<i class="dot" style="background:${l.up ? G : "#3a4152"}"></i>`).join("");
   $("ckCoin").textContent = coin;
-  $("ckDir").innerHTML = `<div class="verdict" style="color:${dir > 0 ? G : dir < 0 ? R : D}">${dir > 0 ? "롱 가능" : dir < 0 ? "숏 가능" : "대기"}</div>`
-    + votes(coin, v, now.lights) + (btc && coin !== "BTC" ? votes("BTC", vb, btc.lights) : "");
+  $("ckDir").innerHTML = `<div class="verdict" style="color:${dir > 0 ? G : dir < 0 ? R : D}">${dir > 0 ? "롱 가능" : dir < 0 ? "숏 가능" : "대기"}</div>`;
   const a = atr14();
   plan = null;
-  if (!a) { $("ckLadder").innerHTML = `<div class="dim">ATR 계산 중</div>`; ["ckOrder", "ckCost", "ckWarn"].forEach(id => $(id).innerHTML = ""); return; }
+  if (!a) { $("ckLadder").innerHTML = `<div class="dim">ATR 계산 중</div>`; ["ckOrder", "ckCrit"].forEach(id => $(id).innerHTML = ""); return; }
   const force = +$("viewDir").value, d = force || dir || 1, preview = !dir || (force && force !== dir);
   // a typed entry keeps the ATR from the moment it was typed, so its stop / take-profits stay put as new days come in
   const typed = +$("entry").value > 0, ent = typed ? +$("entry").value : live, oneR = 2 * (typed && entryAtr || a);
@@ -375,23 +372,24 @@ function check(now, live) {
   const min = Math.max(MIN_NOTIONAL[$("sym").value] ?? 5, (MIN_QTY[$("sym").value] ?? 0) * ent);
   const size = Math.max(notional, min), qty = size / ent;           // below Binance's minimum the order goes in at the minimum
   const entryFee = size * FEE_T, stopFee = size * (1 - d * stopPct) * FEE_T;
+  const bePx = ent * (d > 0 ? (1 + FEE_T) / (1 - FEE_T) : (1 - FEE_T) / (1 + FEE_T));   // taker in + taker out paid back
   const lossAll = size * stopPct + entryFee + stopFee, risk = lossAll / Math.max(acct, 1e-9);
   // cross margin: the whole wallet backs the position (rough: ignores other positions and maintenance tiers)
   const liqX = ent - d * (acct - .005 * size) / Math.max(qty, 1e-12), liqBad = d > 0 ? liqX > 0 && liqX >= stop : liqX <= stop;
   if (dir || force) plan = { dir: d, stop, be, preview };
   // take-profits (tp3.py): 40% at +1.5R pays for the rest if it gets stopped, 30% at +3R, 20% at +5R, last 10% rides the trend
   // a slice smaller than Binance's minimum quantity can't be placed and stays with the runner (BTC 0.001 can't be split)
-  let banked = -entryFee, tpFees = 0;
+  let banked = -entryFee;
   const minQ = MIN_QTY[$("sym").value] ?? 0;
   const tps = [[1.5, .4], [3, .3], [5, .2]].map(([lv, fr], i) => { const px = ent + d * lv * oneR, ok = fr * qty >= minQ, fee = ok ? fr * size * (px / ent) * FEE_M : 0;
-    tpFees += fee; if (ok) banked += fr * size * lv * stopPct - fee; return { i, lv, fr, px, banked, ok }; });
+    if (ok) banked += fr * size * lv * stopPct - fee; return { i, lv, fr, px, banked, ok }; });
   if (plan) plan.tps = tps.filter(t => t.ok).map(t => ({ price: t.px, text: `${t.i + 1}차 익절 ${Math.round(t.fr * 100)}% (${t.lv}R)` }));
   const hit = px => d * (live - px) >= 0, move = px => sgn(pct(px, ent)), usd = x => (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2);
   const rows = [
     ...tps.map(t => ({ k: "tp gain" + (hit(t.px) ? " done" : "") + (t.ok ? "" : " off"), px: t.px, nm: `${t.i + 1}차 익절`,
       sub: t.ok ? `${Math.round(t.fr * 100)}% · ${(t.fr * qty).toPrecision(3)} ${coin}` : `${Math.round(t.fr * 100)}% · 최소 단위 미만`, pl: t.ok ? usd(t.banked) : "" })),
-    { k: "be gain" + (hit(be) ? " done" : ""), px: be, nm: "본전 이동", sub: "손절을 진입가로", pl: "" },
-    { k: "entry done", px: ent, nm: typed ? "진입" : "진입 (지금가)", sub: typed ? `지금 ${fmt(live)}` : "", pl: typed ? usd(d * (live - ent) * qty) : "", now: typed },
+    { k: "be gain" + (hit(be) ? " done" : ""), px: be, nm: "본전 이동", sub: `손절을 ${fmt(bePx)}로`, pl: "" },
+    { k: "entry done", px: ent, nm: typed ? "진입" : "진입 (지금가)", sub: typed ? `지금 ${fmt(live)}` : "", pl: typed ? usd(d * (live - ent) * qty - entryFee - qty * live * FEE_T) : "", now: typed },
     { k: "stop loss", px: stop, nm: "손절", sub: `지갑의 ${(risk * 100).toFixed(2)}%`, pl: usd(-lossAll) },
   ].sort((x, y) => y.px - x.px);
   $("ckOrder").innerHTML = `<span>주문<b>${size.toFixed(1)} USDT</b>${size > notional ? " 최소 주문" : ""}</span><span>수량<b>${qty.toPrecision(3)} ${coin}</b></span>`;
@@ -400,12 +398,30 @@ function check(now, live) {
       + `<div class="px">${fmt(r.px)}<small>${r.now ? sgn(d * pct(live, ent)) : r.k.startsWith("entry") ? "" : move(r.px)}</small></div>`
       + `<div class="pl">${r.pl}</div></div>`).join("")}</div>`
     + `<div class="lv-foot">남은 10%는 ${d > 0 ? "최고" : "최저"} 종가에서 ${fmt(2 * a)} ${d > 0 ? "아래로 손절을 따라 올려요" : "위로 손절을 따라 내려요"}</div>`;
-  const fund = $("mkt").value === "perp" && funding ? (funding.rate >= 0) === (d > 0) ? -Math.abs(funding.rate) * size : Math.abs(funding.rate) * size : null;
-  $("ckCost").innerHTML = [["진입 수수료", entryFee], ["익절 수수료 3번", tpFees], ["손절 시 수수료", stopFee], ["펀딩 8시간마다", fund]]
-    .map(([k, x]) => `<div class="stat"><span>${k}</span><b${k.startsWith("펀딩") && x !== null ? ` style="color:${x >= 0 ? G : R}"` : ""}>${x === null ? "-" : k.startsWith("펀딩") ? (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(4) : x.toFixed(3)} USDT</b></div>`).join("");
-  $("ckWarn").innerHTML = (size > notional ? `<div class="warn${risk > .01 ? "" : " soft"}">지갑의 10%(${notional.toFixed(1)} USDT)가 바이낸스 최소 주문보다 작아서 최소 ${min.toFixed(1)} USDT${MIN_QTY[$("sym").value] ? `(${MIN_QTY[$("sym").value]} ${coin})` : ""}로 계산했어요.${risk > .01 ? ` 손절 시 지갑의 ${(risk * 100).toFixed(2)}%라 이 코인은 건너뛰어요.` : ""}</div>` : "")
-    + (risk > .01 && size === notional ? `<div class="warn soft">손절 시 지갑의 ${(risk * 100).toFixed(2)}%로 1%를 넘어요.</div>` : "")
-    + (liqBad ? `<div class="warn">청산가 ${fmt(liqX)}가 손절가보다 먼저 와요. 지갑을 늘리거나 건너뛰어요.</div>` : "");
+  // checklist: 규칙 = the tested system (a miss means skip); 참고 = common context checks that did not improve the backtest
+  const L = d > 0, z = prof ? nearest(ent) : null, way = z && (L ? z.inside || z.above[0] : z.inside || z.below[0]);
+  const t1 = tps[0].px, block = prof && prof.zones.filter(q => q.hi > Math.min(ent, t1) && q.lo < Math.max(ent, t1) && !(q.lo <= ent && ent <= q.hi))
+    .sort((x, y) => L ? x.lo - y.lo : y.hi - x.hi)[0];
+  const ma50 = sma(dailyCloses, 50), bma = sma(btcCloses, 200), bLast = btcCloses[btcCloses.length - 1];
+  const fr = $("mkt").value === "perp" && funding ? funding.rate : null, hot = fr !== null && (L ? fr > .0003 : fr < -.0001);
+  const rules = [
+    [L ? v >= FUT.long : v <= FUT.short, `${coin} 추세`, `${dots(now.lights)} ${v}/6`],
+    ...(coin !== "BTC" ? [[vb !== null && (L ? vb >= FUT.btcLong : vb <= FUT.btcShort), "BTC 추세", btc ? `${dots(btc.lights)} ${vb}/6` : "-"]] : []),
+    [+(risk * 100).toFixed(2) <= 1, "손절 손실 1% 이하", `지갑의 ${(risk * 100).toFixed(2)}%`],
+    [tps.every(t => t.ok), "익절 3번 나눠짐", tps.every(t => t.ok) ? "가능" : "수량이 최소 단위 미만"],
+    [!liqBad, "청산가가 손절 뒤", liqBad ? fmt(liqX) : (L && liqX <= 0) ? "청산 없음" : fmt(liqX)],
+  ];
+  const refs = [
+    [bma === null ? null : (bLast > bma) === L, "장세 (BTC 200일선)", bma === null ? "-" : bLast > bma ? "상승장" : "하락장"],
+    [ma50 === null ? null : (live > ma50) === L, "50일선", ma50 === null ? "-" : `${live > ma50 ? "위" : "아래"} ${sgn(pct(live, ma50))}`],
+    [fr === null ? null : !hot, "펀딩 과열 아님", fr === null ? "-" : `${(fr * 100).toFixed(4)}% · 8시간 ${usd((fr >= 0) === L ? -Math.abs(fr) * size : Math.abs(fr) * size)}`],
+    [prof ? !block : null, "1차 익절 전 매물대 없음", block ? `${fmt(block.lo)}~${fmt(block.hi)}` : "없음"],
+    [!way || !way.lean ? null : way.lean === d, "길목 매물대 쏠림", way ? LEAN[way.lean][0] : "없음"],
+  ];
+  const group = (name, list) => { const ok = list.filter(c => c[0] === true).length, no = list.filter(c => c[0] === false).length;
+    return `<div class="crit-h">${name}<b class="ok">${ok}</b>통과<b class="no">${no}</b>실패</div>`
+      + list.map(([st, nm, vl]) => `<div class="cr ${st === true ? "ok" : st === false ? "no" : "mid"}"><span class="ic">${st === true ? "✓" : st === false ? "✗" : "–"}</span><span>${nm}</span><span class="vl">${vl}</span></div>`).join(""); };
+  $("ckCrit").innerHTML = `<div class="crit">${group("규칙", rules)}${group("참고", refs)}</div>`;
 }
 
 // 50/200-day averages as lines on the daily chart (kept out of the autoscale so they never squash the candles)
