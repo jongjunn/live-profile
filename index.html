@@ -318,7 +318,7 @@ function signal() {
   const ev = closeEvents(), day = lastDay.toISOString().slice(5, 10);
   $("status").innerHTML =
     `<span class="chip"><span class="big" style="color:${color}">${label}</span> 현물 봇 ${coin} ${Math.round(now.weight * 100)}%</span>`
-    + `<span class="chip">선물: ${fut} · ${coin} ${v}/6${vb === null ? "" : ` · BTC ${vb}/6`}</span>`
+    + `<span class="chip">선물: ${fut} · ${coin} ${v}/6${vb === null || coin === "BTC" ? "" : ` · BTC ${vb}/6`}</span>`
     + `<span class="chip">${day} 종가: ${ev.length ? ev.map(([n, c, z]) => `<b style="color:${c}">${n}</b> ${fmt(z.lo)}~${fmt(z.hi)}`).join(" · ") : `<span class="dim">확정 이벤트 없음</span>`}</span>`;
   check(now, live);
 }
@@ -353,7 +353,7 @@ function check(now, live) {
   $("ckDir").innerHTML = `<div class="verdict" style="color:${dir > 0 ? G : dir < 0 ? R : D}">${dir > 0 ? "롱 가능" : dir < 0 ? "숏 가능" : "대기"}</div>`
     + `<div class="dimrow">${why}</div>`
     + `<div class="lrow"><span>${coin} 추세 ${v}/6</span><span>${dots(now.lights)}</span></div>`
-    + (btc ? `<div class="lrow"><span>BTC 추세 ${vb}/6</span><span>${dots(btc.lights)}</span></div>` : "")
+    + (btc && coin !== "BTC" ? `<div class="lrow"><span>BTC 추세 ${vb}/6</span><span>${dots(btc.lights)}</span></div>` : "")
     + `<div class="dimrow">신호 = 지금 종가가 1·2·4·8·16·32주 전보다 높으면 초록</div>`
     + `<div class="kv"><span>장세 (BTC 200일선)</span><b style="color:${bull ? G : R}">${bma === null ? "-" : bull ? "상승장" : "하락장"} <small>${bma ? fmt(bma) : ""}</small></b></div>`;
   const a = atr14();
@@ -457,7 +457,21 @@ function markers() {                                   // the rule's past buy/se
     prevOn = on;
   }
   flush();
-  series.setMarkers(ms);
+  allMarks = ms; markKey = null; showMarks();
+}
+
+// marker words only where they fit: when zoomed out, crowded markers keep just the arrow (the library draws the words at
+// a fixed size, so they would otherwise pile up into "매도매도")
+let allMarks = [], markKey = null;
+function showMarks() {
+  const r = chart.timeScale().getVisibleLogicalRange(); if (!r || !series) return;
+  const gap = 36 / (chart.timeScale().width() / Math.max(1, r.to - r.from)), idx = new Map(data.map((b, i) => [b.time, i]));
+  let last = -1e9;
+  const shown = allMarks.map(m => { const i = idx.get(m.time) ?? -1e9, ok = i - last >= gap; if (ok) last = i; return ok; });
+  const key = shown.join("");
+  if (key === markKey) return;
+  markKey = key;
+  series.setMarkers(allMarks.map((m, k) => shown[k] ? m : { ...m, text: "" }));
 }
 
 // ---- volume profile ----
@@ -532,7 +546,8 @@ function nearest(p) {
   return { above, below, inside: prof.zones.find(z => z.lo < p && p < z.hi) };
 }
 
-function draw(panels = true) {     // panels = also refresh the status strip / detail panel (not needed when only the view moved)
+function draw(panels = true) {
+  showMarks();     // panels = also refresh the status strip / detail panel (not needed when only the view moved)
   // size from the wrapper, never from the canvas itself (that feeds back and grows without bound)
   const cv = $("overlay"), W = $("chartWrap").clientWidth, H = $("chartWrap").clientHeight, dpr = window.devicePixelRatio || 1;
   if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
@@ -596,16 +611,16 @@ function draw(panels = true) {     // panels = also refresh the status strip / d
     }
   }
   // labels on a see-through plate, nudged apart so they never overlap: zones right (next to the histogram), confirmation
-  // lines left. Text follows the zoom: candle spacing 8px (default) = 12px text, zoomed out down to 8px, zoomed in up to 14px
+  // lines left. Text follows the zoom: candle spacing 8px (default) = 12px text, zoomed out down to 9px, zoomed in up to 14px
   const vr = chart.timeScale().getVisibleLogicalRange(), zoom = vr ? paneW / Math.max(1, vr.to - vr.from) / 8 : 1;
-  const fs = Math.round(12 * Math.min(1.15, Math.max(.67, zoom)));
+  const fs = Math.round(12 * Math.min(1.15, Math.max(.75, zoom)));
   const place = (list, font, xOf) => { g.font = font;
     list.filter(l => l.y !== null && l.y > 8 && l.y < H - 30).sort((a, b) => a.y - b.y)
       .reduce((lastY, l) => { const yy = Math.max(l.y, lastY + fs * 1.5), w = g.measureText(l.text).width, x = xOf(w);
         g.fillStyle = "rgba(19,23,34,.6)"; g.fillRect(x - 4, yy - fs * .83, w + 8, fs * 1.58);
         g.fillStyle = l.color || "#f0a202"; g.fillText(l.text, x, yy + fs * .33); return yy; }, -100); };
   place(labels, `bold ${fs}px -apple-system, sans-serif`, w => paneW - barMax - 12 - w);
-  place(lineLabels, `${fs - 1}px -apple-system, sans-serif`, () => 50);
+  place(lineLabels, `${Math.max(9, fs - 1)}px -apple-system, sans-serif`, () => 50);
   drawShapes(g, y, paneW, H);
   g.font = `bold ${fs}px -apple-system, sans-serif`;
   for (const [pos, list] of Object.entries(edge)) list.forEach((t, i) => {
@@ -618,6 +633,7 @@ function draw(panels = true) {     // panels = also refresh the status strip / d
 
 function initChart() {
   if (chart) chart.remove();
+  allMarks = []; markKey = null;
   chart = LightweightCharts.createChart($("chart"), {
     autoSize: true,
     layout: { background: { color: "#131722" }, textColor: "#d1d4dc", fontSize: 12 },
@@ -625,6 +641,8 @@ function initChart() {
     rightPriceScale: { borderColor: "#2a3042", scaleMargins: { top: .06, bottom: .15 }, mode: +$("scale").value },
     timeScale: { borderColor: "#2a3042", timeVisible: /[mh]$/.test($("iv").value), rightOffset: 6, barSpacing: 8 },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    localization: { priceFormatter: v => { const a = Math.abs(v), d = a >= 1000 ? 0 : a >= 10 ? 2 : a >= .1 ? 4 : 6;
+      return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); } },
   });
   series = chart.addCandlestickSeries({
     upColor: "#26a69a", downColor: "#ef5350", borderVisible: false, wickUpColor: "#26a69a", wickDownColor: "#ef5350", priceLineColor: "#2962ff",
