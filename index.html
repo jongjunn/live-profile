@@ -595,21 +595,24 @@ function draw(panels = true) {     // panels = also refresh the status strip / d
       g.fillStyle = "rgba(19,23,34,.9)"; g.fillRect(x + 4, 6, w + 10, 18); g.fillStyle = "#c9ccd4"; g.fillText(t, x + 9, 19);
     }
   }
-  // labels on a dark plate, nudged apart so they never overlap: zones right (next to the histogram), confirmation lines left
+  // labels on a see-through plate, nudged apart so they never overlap: zones right (next to the histogram), confirmation
+  // lines left. Text follows the zoom: candle spacing 8px (default) = 12px text, zoomed out down to 8px, zoomed in up to 14px
+  const vr = chart.timeScale().getVisibleLogicalRange(), zoom = vr ? paneW / Math.max(1, vr.to - vr.from) / 8 : 1;
+  const fs = Math.round(12 * Math.min(1.15, Math.max(.67, zoom)));
   const place = (list, font, xOf) => { g.font = font;
     list.filter(l => l.y !== null && l.y > 8 && l.y < H - 30).sort((a, b) => a.y - b.y)
-      .reduce((lastY, l) => { const yy = Math.max(l.y, lastY + 18), w = g.measureText(l.text).width, x = xOf(w);
-        g.fillStyle = "rgba(19,23,34,.85)"; g.fillRect(x - 5, yy - 10, w + 10, 19);
-        g.fillStyle = l.color || "#f0a202"; g.fillText(l.text, x, yy + 4); return yy; }, -100); };
-  place(labels, "bold 12px -apple-system, sans-serif", w => paneW - barMax - 12 - w);
-  place(lineLabels, "11px -apple-system, sans-serif", () => 50);
+      .reduce((lastY, l) => { const yy = Math.max(l.y, lastY + fs * 1.5), w = g.measureText(l.text).width, x = xOf(w);
+        g.fillStyle = "rgba(19,23,34,.6)"; g.fillRect(x - 4, yy - fs * .83, w + 8, fs * 1.58);
+        g.fillStyle = l.color || "#f0a202"; g.fillText(l.text, x, yy + fs * .33); return yy; }, -100); };
+  place(labels, `bold ${fs}px -apple-system, sans-serif`, w => paneW - barMax - 12 - w);
+  place(lineLabels, `${fs - 1}px -apple-system, sans-serif`, () => 50);
   drawShapes(g, y, paneW, H);
-  g.font = "bold 12px -apple-system, sans-serif";
+  g.font = `bold ${fs}px -apple-system, sans-serif`;
   for (const [pos, list] of Object.entries(edge)) list.forEach((t, i) => {
-    const w = g.measureText(t.text).width, x = paneW - barMax - 12 - w, yy = pos === "top" ? 16 + i * 21 : H - 46 - i * 21;
-    g.fillStyle = "rgba(19,23,34,.92)"; g.fillRect(x - 6, yy - 11, w + 12, 20);
+    const w = g.measureText(t.text).width, x = paneW - barMax - 12 - w, yy = pos === "top" ? 16 + i * fs * 1.75 : H - 46 - i * fs * 1.75;
+    g.fillStyle = "rgba(19,23,34,.85)"; g.fillRect(x - 6, yy - fs * .92, w + 12, fs * 1.67);
     g.strokeStyle = t.color; g.lineWidth = 1; g.setLineDash([]); g.strokeRect(x - 6, yy - 11, w + 12, 20);
-    g.fillStyle = t.color; g.fillText(t.text, x, yy + 4); });
+    g.fillStyle = t.color; g.fillText(t.text, x, yy + fs * .33); });
   if (panels) signal();
 }
 
