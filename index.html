@@ -15,6 +15,7 @@
   #price { font-size:24px; font-weight:700; margin-left:auto; font-variant-numeric:tabular-nums; }
   #dot { width:9px; height:9px; border-radius:50%; background:var(--down); display:inline-block; margin-right:5px; }
   main { display:flex; flex:1; min-height:0; }
+  #layers .lay { padding:3px 7px; font-size:12px; margin-right:2px; } #layers .lay.off { opacity:.4; text-decoration:line-through; }
   button { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 9px; font:inherit; cursor:pointer; }
   #ohlc { position:absolute; left:52px; top:8px; z-index:11; pointer-events:none; font-size:12px; background:rgba(19,23,34,.88);
           padding:3px 8px; border-radius:4px; font-variant-numeric:tabular-nums; }
@@ -83,6 +84,7 @@
     <option value="80">보통</option><option value="140">세밀</option></select></label>
   <label>가격축 <select id="scale"><option value="0" selected>일반</option><option value="1">로그</option></select></label>
   <span class="dim"><span id="dot"></span><span id="upd">연결 중…</span></span>
+  <span id="layers"></span>
   <button id="fitBtn" title="세로 범위를 캔들에 다시 맞춤">맞춤</button>
   <div id="price">-</div>
 </header>
@@ -372,8 +374,8 @@ const IND = {
     const vw = n => c.map((_, i) => { if (i < n - 1) return NaN; let s = 0, w = 0; for (let j = i - n + 1; j <= i; j++) { s += c[j] * v[j]; w += v[j]; } return w ? s / w : NaN; });
     const a = vw(12), z = vw(26), m = a.map((x, i) => x - z[i]), sg = emaA(m, 9);
     let st = 0;
-    return m.map((x, i) => { const up = i > 0 && x > sg[i] && m[i - 1] <= sg[i - 1], dn = i > 0 && x < sg[i] && m[i - 1] >= sg[i - 1];
-      if (up && !dn) st = 1; else if (dn && !up) st = -1; return st; });
+    return Object.assign(m.map((x, i) => { const up = i > 0 && x > sg[i] && m[i - 1] <= sg[i - 1], dn = i > 0 && x < sg[i] && m[i - 1] >= sg[i - 1];
+      if (up && !dn) st = 1; else if (dn && !up) st = -1; return st; }), { m, sg });
   },
   "SuperTrend": b => {                                  // ATR 10 x 3 around HL2
     const [h, l, c] = cols(b), a = rmaA(trA(h, l, c), 10);
@@ -386,7 +388,7 @@ const IND = {
       const prev = st[i - 1] || -1;
       st[i] = prev < 0 && c[i] > fu[i] ? 1 : prev > 0 && c[i] < fl[i] ? -1 : prev;
     }
-    return st;
+    return Object.assign(st, { fu, fl });
   },
   "Squeeze Momentum": b => {                            // BB 20x2 inside KC 20x1.5 = squeeze; first bar out -> momentum sign; out when momentum turns
     const [h, l, c] = cols(b), n = 20, basis = smaA(c, n), rng = smaA(trA(h, l, c), n);
@@ -405,18 +407,79 @@ const IND = {
       else if (st === 1 && mom[i] < mom[i - 1]) st = 0; else if (st === -1 && mom[i] > mom[i - 1]) st = 0;
       out.push(st);
     }
-    return out;
+    return Object.assign(out, { mom, on });
   },
 };
-function regimeNow() {                                  // from the last completed daily bar
-  const d = hist.filter(b => b.time - TZ < todayUTC() / 1000);
-  if (d.length < 220) return null;
+const closedDays = () => hist.filter(b => b.time - TZ < todayUTC() / 1000);
+function regimes(d) {                                   // per daily bar, decided by its close (-1 = not enough history)
   const [h, l, c] = cols(d);
   const up = h.map((x, i) => i ? x - h[i - 1] : NaN), dn = l.map((x, i) => i ? l[i - 1] - x : NaN);
   const a = rmaA(trA(h, l, c), 14), di = dm => rmaA(dm, 14).map((x, i) => 100 * x / a[i]);
   const p = di(up.map((u, i) => u > dn[i] && u > 0 ? u : 0)), m = di(dn.map((v, i) => v > up[i] && v > 0 ? v : 0));
-  const adx = rmaA(p.map((x, i) => 100 * Math.abs(x - m[i]) / (x + m[i])), 14), n = c.length - 1, s200 = sma(c, 200);
-  return { code: (c[n] > s200) * 2 + (adx[n] >= 25), above: pct(c[n], s200), adx: adx[n] };
+  const adx = rmaA(p.map((x, i) => 100 * Math.abs(x - m[i]) / (x + m[i])), 14), s200 = smaA(c, 200);
+  return { code: c.map((x, i) => Number.isFinite(s200[i]) && Number.isFinite(adx[i]) ? (x > s200[i]) * 2 + (adx[i] >= 25) : -1),
+    above: c.map((x, i) => pct(x, s200[i])), adx };
+}
+function regimeNow() {                                  // from the last completed daily bar
+  const d = closedDays();
+  if (d.length < 220) return null;
+  const r = regimes(d), n = d.length - 1;
+  return { code: r.code[n], above: r.above[n], adx: r.adx[n] };
+}
+// ---- the indicator in use, drawn on the 4h chart: SuperTrend over the candles, VW-MACD / Squeeze in a strip below them ----
+const LAYERS = [["zones", "매물대"], ["hist", "매물대 막대"], ["confirm", "확인선"], ["ma", "이평선"], ["vol", "거래량"], ["marks", "화살표"], ["ind", "지표"], ["draw", "그림"]];
+let show = {};
+try { show = JSON.parse(localStorage.getItem("layers") || "{}"); } catch {}
+LAYERS.forEach(([k]) => show[k] ??= true);
+function applyLayers() {                                // series that live in the chart library; the canvas reads `show` in draw()
+  $("layers").innerHTML = LAYERS.map(([k, n]) => `<button class="lay${show[k] ? "" : " off"}" data-k="${k}">${n}</button>`).join("");
+  if (!chart || !series) return;
+  [ma50, ma200].forEach(x => x && x.applyOptions({ visible: show.ma }));
+  volume && volume.applyOptions({ visible: show.vol });
+  markKey = null; drawInd(); dirty = true;
+}
+applyLayers();
+$("layers").addEventListener("click", e => { const k = e.target.dataset && e.target.dataset.k; if (!k) return;
+  show[k] = !show[k]; try { localStorage.setItem("layers", JSON.stringify(show)); } catch {} applyLayers(); });
+let indS = [];
+function drawInd() {
+  indS.forEach(x => chart.removeSeries(x)); indS = [];
+  series.priceScale().applyOptions({ scaleMargins: { top: .06, bottom: .15 } });
+  if ($("iv").value !== "4h" || !data.length || !show.ind) return;
+  const rg = regimeNow(); if (!rg || rg.code < 0) return;
+  const name = PICKS[rg.code], st = IND[name](data), t = data.map(b => b.time), ok = Number.isFinite;
+  const add = (type, opt, pts) => { const x = chart[type]({ priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...opt }); x.setData(pts); indS.push(x); };
+  if (name === "SuperTrend") {                          // the active band: below price while long, above while short
+    add("addLineSeries", { lineWidth: 2, title: "SuperTrend", autoscaleInfoProvider: () => null },
+      t.map((x, i) => st[i] > 0 && ok(st.fl[i]) ? { time: x, value: st.fl[i], color: "#26a69a" } : st[i] < 0 && ok(st.fu[i]) ? { time: x, value: st.fu[i], color: "#ef5350" } : { time: x }));
+    return;
+  }
+  series.priceScale().applyOptions({ scaleMargins: { top: .06, bottom: .33 } });
+  const o = { priceScaleId: "ind" };
+  if (name === "VW-MACD") {
+    add("addHistogramSeries", o, t.map((x, i) => ok(st.m[i]) && ok(st.sg[i]) ? { time: x, value: st.m[i] - st.sg[i], color: st.m[i] >= st.sg[i] ? "rgba(38,166,154,.5)" : "rgba(239,83,80,.5)" } : { time: x }));
+    add("addLineSeries", { ...o, color: "#2962ff", lineWidth: 1, title: "VW-MACD" }, t.map((x, i) => ok(st.m[i]) ? { time: x, value: st.m[i] } : { time: x }));
+    add("addLineSeries", { ...o, color: "#ff9800", lineWidth: 1, title: "신호선" }, t.map((x, i) => ok(st.sg[i]) ? { time: x, value: st.sg[i] } : { time: x }));
+  } else {                                              // momentum bars; dots on zero: orange = squeezed, grey = released
+    add("addHistogramSeries", { ...o, title: "Squeeze" }, t.map((x, i) => ok(st.mom[i]) ? { time: x, value: st.mom[i],
+      color: st.mom[i] >= 0 ? (st.mom[i] >= st.mom[i - 1] ? "#26a69a" : "rgba(38,166,154,.45)") : (st.mom[i] <= st.mom[i - 1] ? "#ef5350" : "rgba(239,83,80,.45)") } : { time: x }));
+    add("addLineSeries", { ...o, lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2 }, t.map((x, i) => ({ time: x, value: 0, color: st.on[i] ? "#f0a202" : "#5d6475" })));
+  }
+  chart.priceScale("ind").applyOptions({ scaleMargins: { top: .69, bottom: .15 } });
+}
+function h4Marks() {                                    // where the card's state changed: arrow on the bar it is traded at
+  const d = closedDays(); if (d.length < 220) return [];
+  const code = regimes(d).code, byDay = new Map(d.map((b, i) => [b.time - TZ, code[i]]));
+  const sts = {}; for (const n of new Set(Object.values(PICKS).filter(v => IND[v]))) sts[n] = IND[n](data);
+  const now = Date.now() / 1000, ms = []; let prev = null;
+  for (let i = 60; i < data.length - 1; i++) {          // skip warm-up; the last bar is still forming
+    if (data[i].time - TZ + 4 * 3600 > now) break;
+    const c = byDay.get(Math.floor((data[i].time - TZ) / 86400) * 86400 - 86400), p = c === undefined || c < 0 ? 0 : sts[PICKS[c]][i];
+    if (prev !== null && p !== prev) ms.push({ time: data[i + 1].time, position: p > 0 ? "belowBar" : "aboveBar", color: p > 0 ? "#26a69a" : p < 0 ? "#ef5350" : "#8a90a0",
+      shape: p > 0 ? "arrowUp" : p < 0 ? "arrowDown" : "circle", text: p > 0 ? "롱" : p < 0 ? "숏" : "청산" });
+    prev = p;
+  }
+  return ms;
 }
 let h4 = [];
 async function loadH4() {                               // closed 4h bars only
@@ -444,6 +507,7 @@ function check(now, live) {
   $("ckCrit").innerHTML = `<div class="crit">`
     + row("장세", `${REG_NAME[rg.code]} · 200일선 ${sgn(rg.above)} · ADX ${rg.adx.toFixed(0)}`)
     + row("이번 분기 지표", `${name} (${PICKS.q})`)
+    + ($("iv").value === "4h" ? row("차트", name === "SuperTrend" ? "캔들 위 선" : "캔들 아래 칸") : row("차트", `<a href="#" id="to4h" style="color:#2962ff">4시간 차트로 지표 보기</a>`))
     + (qNow !== PICKS.q ? row("분기 바뀜", "지표 다시 뽑아야 함", "no") : "")
     + (notional < min ? row("최소 주문", `${min.toFixed(0)} USDT > 코인당 ${notional.toFixed(0)} → 최소로 들어감`, "no") : "")
     + `</div>`;
@@ -483,6 +547,7 @@ function dayAt(t) {
 }
 
 function markers() {                                   // the rule's past buy/sell days, placed on whatever interval is shown
+  if ($("iv").value === "4h") { allMarks = h4Marks(); markKey = null; showMarks(); return; }
   const t0 = todayUTC() / 1000, done = hist.filter(b => b.time - TZ < t0), c = done.map(b => b.close), ms = [];
   // one marker per chart bar: on bars longer than a day (weekly) a buy and sell inside the same bar cancel out
   let prevOn = null, cur = null;
@@ -508,10 +573,10 @@ function showMarks() {
   const gap = 36 / (chart.timeScale().width() / Math.max(1, r.to - r.from)), idx = new Map(data.map((b, i) => [b.time, i]));
   let last = -1e9;
   const shown = allMarks.map(m => { const i = idx.get(m.time) ?? -1e9, ok = i - last >= gap; if (ok) last = i; return ok; });
-  const key = shown.join("");
+  const key = show.marks + shown.join("");
   if (key === markKey) return;
   markKey = key;
-  series.setMarkers(allMarks.map((m, k) => shown[k] ? m : { ...m, text: "" }));
+  series.setMarkers(show.marks ? allMarks.map((m, k) => shown[k] ? m : { ...m, text: "" }) : []);
 }
 
 // ---- volume profile ----
@@ -598,7 +663,7 @@ function draw(panels = true) {
   const key = $("pr").value === "visible" ? null : `${$("pr").value}|${nb}|${hist.length}|${$("hl").value}`;
   if (!key || key !== profKey) { prof = profile(bars, nb); profKey = key; }
   const p = nowPrice(), near = nearest(p);
-  const paneW = chart.timeScale().width(), y = v => series.priceToCoordinate(v), barMax = paneW * .2;
+  const paneW = chart.timeScale().width(), y = v => series.priceToCoordinate(v), barMax = show.hist ? paneW * .2 : 0;
   // bands for every zone; top five numbered; nearest support/resistance always labeled
   const labels = [], lineLabels = [];
   // nearest zones / bot line that are off-screen get an edge tag with their distance
@@ -607,12 +672,12 @@ function draw(panels = true) {
   const hline = (v, color, dash, w) => { const yy = y(v); if (yy === null) return;
     g.setLineDash(dash); g.strokeStyle = color; g.lineWidth = w; g.beginPath(); g.moveTo(0, yy); g.lineTo(paneW, yy); g.stroke(); g.setLineDash([]); };
   for (const z of prof.zones) {
-    for (const c of confirmLines(z, p)) {
+    if (show.confirm) for (const c of confirmLines(z, p)) {
       const col = z.status === "소화됨" ? c.color + "70" : c.color;
       hline(c.v, col, [2, 4], 1.1);
       lineLabels.push({ y: y(c.v), text: `${c.name} ${fmt(c.v)}`, color: col });
     }
-    const y1 = y(z.hi), y0 = y(z.lo); if (y1 === null || y0 === null) continue;
+    const y1 = y(z.hi), y0 = y(z.lo); if (!show.zones || y1 === null || y0 === null) continue;
     g.fillStyle = z.status === "소화됨" ? "rgba(240,162,2,.05)" : z.rank < 5 ? `rgba(240,162,2,${.2 - z.rank * .025})` : "rgba(240,162,2,.07)";
     g.fillRect(0, y1, paneW, y0 - y1);
     const tag = z === near.above[0] ? "▲ 바로 위 저항 " : z === near.below[0] ? "▼ 바로 아래 지지 " : z === near.inside ? "◆ 현재 위치 " : "";
@@ -621,14 +686,14 @@ function draw(panels = true) {
   }
   // histogram on the right edge of the price pane; zone bars coloured by who was more aggressive there
   const maxV = Math.max(...prof.vol);
-  prof.vol.forEach((v, i) => {
+  if (show.hist) prof.vol.forEach((v, i) => {
     const a = prof.edges[i], y1 = y(prof.edges[i + 1]), y0 = y(a); if (y1 === null || y0 === null) return;
     const zz = prof.zones.find(z => a >= z.lo - 1e-9 && a < z.hi - 1e-9), w = v / maxV * barMax;
     g.fillStyle = !zz ? "rgba(138,144,160,.35)" : LEAN[zz.lean][2];
     g.fillRect(paneW - w, y1 + .5, w, Math.max(1, y0 - y1 - 1));
   });
-  hline(prof.poc, "#ff6b3d", [], 1.3); hline(prof.vah, "#ff6b3d", [5, 4], .9); hline(prof.val, "#ff6b3d", [5, 4], .9);
-  labels.push({ y: y(prof.poc), text: `POC ${fmt(prof.poc)}`, color: "#ff6b3d" });
+  if (show.zones) { hline(prof.poc, "#ff6b3d", [], 1.3); hline(prof.vah, "#ff6b3d", [5, 4], .9); hline(prof.val, "#ff6b3d", [5, 4], .9);
+    labels.push({ y: y(prof.poc), text: `POC ${fmt(prof.poc)}`, color: "#ff6b3d" }); }
   if (plan) {                                             // the futures plan from the check panel
     hline(plan.stop, "#ef5350", [6, 4], 1.4);
     labels.push({ y: y(plan.stop), text: `${plan.preview ? "(미리보기) " : ""}${plan.dir > 0 ? "롱" : "숏"} 손절 (2 ATR) ${fmt(plan.stop)}`, color: "#ef5350" });
@@ -636,13 +701,13 @@ function draw(panels = true) {
     labels.push({ y: y(plan.be), text: `+1R → 손절을 본전으로 ${fmt(plan.be)}`, color: "#26a69a" });
     for (const t of plan.tps || []) { hline(t.price, "#26a69a", [2, 3], 1.2); labels.push({ y: y(t.price), text: `${t.text} ${fmt(t.price)}`, color: "#26a69a" }); }
   }
-  for (const [n, col] of [[50, "#f7c948"], [200, "#ce93d8"]]) {
+  if (show.ma) for (const [n, col] of [[50, "#f7c948"], [200, "#ce93d8"]]) {
     const m = sma(dailyCloses, n); if (m) labels.push({ y: y(m), text: `${n}일선 ${fmt(m)}`, color: col });
   }
-  if (near.above[0]) tag(near.above[0].lo, `▲ 저항 ${fmt(near.above[0].lo)}~${fmt(near.above[0].hi)} (${sgn(pct(near.above[0].lo, p))})`, "#f0a202");
-  if (near.below[0]) tag(near.below[0].hi, `▼ 지지 ${fmt(near.below[0].lo)}~${fmt(near.below[0].hi)} (${sgn(pct(near.below[0].hi, p))})`, "#f0a202");
+  if (show.zones && near.above[0]) tag(near.above[0].lo, `▲ 저항 ${fmt(near.above[0].lo)}~${fmt(near.above[0].hi)} (${sgn(pct(near.above[0].lo, p))})`, "#f0a202");
+  if (show.zones && near.below[0]) tag(near.below[0].hi, `▼ 지지 ${fmt(near.below[0].lo)}~${fmt(near.below[0].hi)} (${sgn(pct(near.below[0].hi, p))})`, "#f0a202");
   // where the profile's period starts (zones only reflect trades to the right of this line)
-  if (/^\d+$/.test($("pr").value) && bars.length) {
+  if (show.zones && /^\d+$/.test($("pr").value) && bars.length) {
     const first = data.find(b => b.time >= bars[0].time), x = first && data[0].time < bars[0].time ? chart.timeScale().timeToCoordinate(first.time) : null;
     if (x !== null && x > 0 && x < paneW) {
       g.strokeStyle = "#8a90a0"; g.lineWidth = 1; g.setLineDash([6, 5]); g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H - 28); g.stroke(); g.setLineDash([]);
@@ -661,7 +726,7 @@ function draw(panels = true) {
         g.fillStyle = l.color || "#f0a202"; g.fillText(l.text, x, yy + fs * .33); return yy; }, -100); };
   place(labels, `bold ${fs}px -apple-system, sans-serif`, w => paneW - barMax - 12 - w);
   place(lineLabels, `${Math.max(9, fs - 1)}px -apple-system, sans-serif`, () => 50);
-  drawShapes(g, y, paneW, H);
+  if (show.draw) drawShapes(g, y, paneW, H);
   g.font = `bold ${fs}px -apple-system, sans-serif`;
   for (const [pos, list] of Object.entries(edge)) list.forEach((t, i) => {
     const w = g.measureText(t.text).width, x = paneW - barMax - 12 - w, yy = pos === "top" ? 16 + i * fs * 1.75 : H - 46 - i * fs * 1.75;
@@ -711,7 +776,7 @@ function initChart() {
 
 let volume = null;
 const volBar = b => ({ time: b.time, value: b.q, color: b.close >= b.open ? "rgba(38,166,154,.45)" : "rgba(239,83,80,.45)" });
-function setAll() { series.setData(data); volume.setData(data.map(volBar)); markers(); updateMAs(); }
+function setAll() { series.setData(data); volume.setData(data.map(volBar)); markers(); updateMAs(); applyLayers(); }
 
 async function onRange(r) {
   dirty = true;
@@ -737,7 +802,7 @@ function connect() {
   ws.onmessage = e => {
     const k = JSON.parse(e.data).k; if (!k) return;
     const bar = toBar([k.t, k.o, k.h, k.l, k.c, k.v, 0, k.q, 0, 0, k.Q]), last = data[data.length - 1];
-    if (last && bar.time === last.time) data[data.length - 1] = bar; else if (!last || bar.time > last.time) data.push(bar);
+    if (last && bar.time === last.time) data[data.length - 1] = bar; else if (!last || bar.time > last.time) { data.push(bar); if ($("iv").value === "4h") { drawInd(); markers(); } }
     series.update(bar); volume.update(volBar(bar));
     const prev = livePrice; livePrice = bar.close;
     $("price").textContent = fmt(livePrice); $("price").style.color = prev === null || livePrice >= prev ? "#26a69a" : "#ef5350";
@@ -760,6 +825,8 @@ async function start() {
 }
 
 ["sym", "mkt", "iv"].forEach(id => $(id).addEventListener("change", start));
+$("ckCrit").addEventListener("pointerdown", e => { if (e.target.id === "to4h") {   // pointerdown: the card is redrawn every tick
+ e.preventDefault(); $("iv").value = "4h"; $("iv").dispatchEvent(new Event("change")); } });
 for (const [id, def] of [["acct", 200], ["mult", 1]]) {
   try { $(id).value = localStorage.getItem(id) ?? def; } catch { $(id).value = def; }
   for (const ev of ["input", "change"]) $(id).addEventListener(ev, () => { try { localStorage.setItem(id, $(id).value); } catch {} dirty = true; });
