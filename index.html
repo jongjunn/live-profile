@@ -87,7 +87,7 @@
   <label>가격축 <select id="scale"><option value="0" selected>일반</option><option value="1">로그</option></select></label>
   <span class="dim"><span id="dot"></span><span id="upd">연결 중…</span></span>
   <button id="fitBtn" title="세로 범위를 캔들에 다시 맞춤">맞춤</button>
-  <button id="detailBtn">체크 ▸</button>
+  <label>지갑 USDT <input id="acct" type="number" min="1" step="any" style="width:70px"></label>
   <div id="price">-</div>
 </header>
 <div id="status"></div>
@@ -110,7 +110,6 @@
     <div class="rule"></div>
     <div class="inputs">
       <label class="field"><span>진입가</span><div class="in"><input id="entry" type="number" min="0" step="any" placeholder="지금 가격"><button id="entryNow" type="button">지금가</button></div></label>
-      <label class="field"><span>지갑 USDT</span><input id="acct" type="number" min="1" step="any"></label>
       <label class="field"><span>손절 시 잃을 % (최대 5)</span><input id="risk" type="number" min="0.1" max="5" step="0.5"></label>
       <label class="field"><span>레버리지</span><input id="lev" type="number" min="1" max="125" step="1"></label>
     </div>
@@ -431,6 +430,11 @@ function check(now, live) {
     return `<div class="crit-h">${name}<b class="ok">${ok}</b>통과<b class="no">${no}</b>실패</div>`
       + list.map(([st, nm, vl]) => `<div class="cr ${st === true ? "ok" : st === false ? "no" : "mid"}"><span class="ic">${st === true ? "✓" : st === false ? "✗" : "–"}</span><span>${nm}</span><span class="vl">${vl}</span></div>`).join(""); };
   $("ckCrit").innerHTML = `<div class="crit">${group("규칙", rules)}${group("참고", refs)}</div>`;
+  const miss = rules.filter(c => !c[0]).map(c => c[1]);
+  $("status").insertAdjacentHTML("beforeend", !dir ? `<span class="chip"><span class="big" style="color:${D}">대기</span> 들어갈 자리 아님</span>`
+    : miss.length ? `<span class="chip"><span class="big" style="color:${D}">${L ? "롱" : "숏"} 패스</span> ${miss.join(", ")}</span>`
+    : `<span class="chip"><span class="big" style="color:${L ? G : R}">${L ? "롱" : "숏"} 진입</span> 시장가 ${fmt(ent)} · 수량 <b>${qty.toPrecision(3)} ${coin}</b> · 손절 <b>${fmt(stop)}</b>`
+      + ` · 익절 ${tps.filter(t => t.ok).map(t => `${Math.round(t.fr * 100)}% ${fmt(t.px)}`).join(" / ")} · +1R ${fmt(be)} 오면 손절 본전</span>`);
 }
 
 // 50/200-day averages as lines on the daily chart (kept out of the autoscale so they never squash the candles)
@@ -728,7 +732,6 @@ const entryKey = () => `entry_${$("mkt").value}_${$("sym").value}`;
 let entryAtr = null;
 async function start() {
   loadShapes(); loadFunding();
-  try { const e = JSON.parse(localStorage.getItem(entryKey()) || "{}"); $("entry").value = e.p ?? ""; entryAtr = e.a ?? null; } catch {}
   initChart(); data = []; hist = []; prof = null; profKey = null; hasMore = true; livePrice = null;
   try {
     $("upd").textContent = "과거 데이터 불러오는 중…";
@@ -741,10 +744,6 @@ async function start() {
 }
 
 ["sym", "mkt", "iv"].forEach(id => $(id).addEventListener("change", start));
-const setDetail = on => { document.body.classList.toggle("detail", on); $("detailBtn").textContent = on ? "체크 ◂" : "체크 ▸"; dirty = true;
-  try { localStorage.setItem("checkPanel", on ? "1" : "0"); } catch {} };
-$("detailBtn").addEventListener("click", () => setDetail(!document.body.classList.contains("detail")));
-try { setDetail(localStorage.getItem("checkPanel") !== "0"); } catch { setDetail(true); }
 for (const [id, def] of [["acct", 200], ["risk", 3], ["lev", 30]]) {
   try { $(id).value = localStorage.getItem(id) ?? def; } catch { $(id).value = def; }
   for (const ev of ["input", "change"]) $(id).addEventListener(ev, () => { try { localStorage.setItem(id, $(id).value); } catch {} dirty = true; });
