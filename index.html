@@ -99,14 +99,16 @@
       <button id="clearDraw" title="그린 것 전부 삭제">🗑</button>
     </div></div>
   <aside>
-    <div class="tk-head"><div class="t"><b id="ckCoin"></b>선물 타점</div>
-      <label class="field"><span>지갑 USDT</span><input id="acct" type="number" min="1" step="any" style="width:84px"></label></div>
+    <div class="tk-head"><div class="t"><b id="ckCoin"></b>4시간 타점</div>
+      <div style="display:flex;gap:6px"><label class="field"><span>지갑 USDT</span><input id="acct" type="number" min="1" step="any" style="width:74px"></label>
+      <label class="field"><span>배율</span><input id="mult" type="number" min="0.1" max="10" step="0.5" style="width:52px"></label></div></div>
     <div id="ckDir"></div>
     <div id="ckCrit"></div>
     <div class="order" id="ckOrder"></div>
     <div class="rule"></div>
     <div id="ckLadder"></div>
-    <div class="tk-foot">진입가 = 오늘 9시 일봉 종가 (백테스트가 들어간 가격). 이미 들고 있으면 추가 진입 안 함. 손절 1번 = 지갑 3%, 교차 30배. 투자 조언 아님.</div>
+    <div class="tk-foot">장세(200일선·ADX)마다 분기별로 성적 1등 지표를 골라 4시간봉 신호대로 들고 있는 방식 (research_indicator_regimes.md).
+      테스트 2024-07~2026-10 BTC/ETH/SOL: 연 +12.9%, 최대 낙폭 -36% (배율 1, 지갑을 3코인에 나눔). 통계 증명 전. 교차 마진. 투자 조언 아님.</div>
   </aside>
 </main>
 <script>
@@ -344,70 +346,113 @@ async function loadFunding() {
     funding = { rate: +r.lastFundingRate, next: r.nextFundingTime }; } catch {}
   dirty = true;
 }
+// ---- 4시간 타점 = indicator_regimes.py 방식 C: 장세마다 분기별 성적 1등 지표, 공식은 tv_indicators.py와 같게 ----
+// 장세 code = (전날 종가 > 200일선)*2 + (ADX14 >= 25): 0 하락횡보, 1 하락추세, 2 상승횡보, 3 상승추세
+// ponytail: only this quarter's 3 picks are ported to JS; re-run indicator_regimes.py each quarter and port any new pick
+const PICKS = { q: "2026Q4", 0: "SuperTrend", 1: "VW-MACD", 2: "Squeeze Momentum", 3: "VW-MACD" };
+const REG_NAME = ["하락횡보", "하락추세", "상승횡보", "상승추세"];
+const smaA = (x, n) => x.map((_, i) => i < n - 1 ? NaN : x.slice(i - n + 1, i + 1).reduce((a, b) => a + b, 0) / n);
+const trA = (h, l, c) => h.map((_, i) => i ? Math.max(h[i] - l[i], Math.abs(h[i] - c[i - 1]), Math.abs(l[i] - c[i - 1])) : h[i] - l[i]);
+function emaA(x, n) {                                   // pandas ewm(span=n, adjust=False, min_periods=n)
+  const a = 2 / (n + 1), out = []; let v = NaN, k = 0;
+  for (const xi of x) { if (Number.isFinite(xi)) { v = Number.isFinite(v) ? a * xi + (1 - a) * v : xi; k++; } out.push(k >= n ? v : NaN); }
+  return out;
+}
+function rmaA(x, n) {                                   // Wilder: seed = mean of the first n
+  const out = x.map(() => NaN), f = x.slice(0, n).filter(Number.isFinite);
+  if (x.length < n || !f.length) return out;
+  out[n - 1] = f.reduce((a, b) => a + b, 0) / f.length;
+  for (let i = n; i < x.length; i++) out[i] = (out[i - 1] * (n - 1) + x[i]) / n;
+  return out;
+}
+const cols = b => [b.map(x => x.high), b.map(x => x.low), b.map(x => x.close)];
+const IND = {
+  "VW-MACD": b => {                                     // VWMA12 - VWMA26 crossing its 9 EMA, volume = quote volume / HLC3
+    const c = b.map(x => x.close), v = b.map(x => { const t = (x.high + x.low + x.close) / 3; return t > 0 ? x.q / t : 0; });
+    const vw = n => c.map((_, i) => { if (i < n - 1) return NaN; let s = 0, w = 0; for (let j = i - n + 1; j <= i; j++) { s += c[j] * v[j]; w += v[j]; } return w ? s / w : NaN; });
+    const a = vw(12), z = vw(26), m = a.map((x, i) => x - z[i]), sg = emaA(m, 9);
+    let st = 0;
+    return m.map((x, i) => { const up = i > 0 && x > sg[i] && m[i - 1] <= sg[i - 1], dn = i > 0 && x < sg[i] && m[i - 1] >= sg[i - 1];
+      if (up && !dn) st = 1; else if (dn && !up) st = -1; return st; });
+  },
+  "SuperTrend": b => {                                  // ATR 10 x 3 around HL2
+    const [h, l, c] = cols(b), a = rmaA(trA(h, l, c), 10);
+    const fu = h.map((x, i) => (x + l[i]) / 2 + 3 * a[i]), fl = h.map((x, i) => (x + l[i]) / 2 - 3 * a[i]), st = [0];
+    for (let i = 1; i < c.length; i++) {
+      st[i] = 0;
+      if (!Number.isFinite(a[i])) continue;
+      if (Number.isFinite(fu[i - 1]) && !(fu[i] < fu[i - 1] || c[i - 1] > fu[i - 1])) fu[i] = fu[i - 1];
+      if (Number.isFinite(fl[i - 1]) && !(fl[i] > fl[i - 1] || c[i - 1] < fl[i - 1])) fl[i] = fl[i - 1];
+      const prev = st[i - 1] || -1;
+      st[i] = prev < 0 && c[i] > fu[i] ? 1 : prev > 0 && c[i] < fl[i] ? -1 : prev;
+    }
+    return st;
+  },
+  "Squeeze Momentum": b => {                            // BB 20x2 inside KC 20x1.5 = squeeze; first bar out -> momentum sign; out when momentum turns
+    const [h, l, c] = cols(b), n = 20, basis = smaA(c, n), rng = smaA(trA(h, l, c), n);
+    const sd = c.map((_, i) => { if (i < n - 1) return NaN; const w = c.slice(i - n + 1, i + 1); return Math.sqrt(w.reduce((s, x) => s + (x - basis[i]) ** 2, 0) / n); });
+    const on = c.map((_, i) => basis[i] - 2 * sd[i] > basis[i] - 1.5 * rng[i] && basis[i] + 2 * sd[i] < basis[i] + 1.5 * rng[i]);
+    const src = c.map((x, i) => i < n - 1 ? NaN : x - ((Math.max(...h.slice(i - n + 1, i + 1)) + Math.min(...l.slice(i - n + 1, i + 1))) / 2 + basis[i]) / 2);
+    const mom = src.map((_, i) => {                     // end point of the 20-bar linear regression
+      if (i < n - 1) return NaN; const y = src.slice(i - n + 1, i + 1); if (!y.every(Number.isFinite)) return NaN;
+      let sx = 0, sy = 0, sxy = 0, sxx = 0; y.forEach((v, k) => { sx += k; sy += v; sxy += k * v; sxx += k * k; });
+      const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx); return (sy - slope * sx) / n + slope * (n - 1);
+    });
+    let st = 0; const out = [0];
+    for (let i = 1; i < c.length; i++) {
+      const rel = !on[i] && on[i - 1];
+      if (rel && mom[i] > 0) st = 1; else if (rel && mom[i] < 0) st = -1;
+      else if (st === 1 && mom[i] < mom[i - 1]) st = 0; else if (st === -1 && mom[i] > mom[i - 1]) st = 0;
+      out.push(st);
+    }
+    return out;
+  },
+};
+function regimeNow() {                                  // from the last completed daily bar
+  const d = hist.filter(b => b.time - TZ < todayUTC() / 1000);
+  if (d.length < 220) return null;
+  const [h, l, c] = cols(d);
+  const up = h.map((x, i) => i ? x - h[i - 1] : NaN), dn = l.map((x, i) => i ? l[i - 1] - x : NaN);
+  const a = rmaA(trA(h, l, c), 14), di = dm => rmaA(dm, 14).map((x, i) => 100 * x / a[i]);
+  const p = di(up.map((u, i) => u > dn[i] && u > 0 ? u : 0)), m = di(dn.map((v, i) => v > up[i] && v > 0 ? v : 0));
+  const adx = rmaA(p.map((x, i) => 100 * Math.abs(x - m[i]) / (x + m[i])), 14), n = c.length - 1, s200 = sma(c, 200);
+  return { code: (c[n] > s200) * 2 + (adx[n] >= 25), above: pct(c[n], s200), adx: adx[n] };
+}
+let h4 = [];
+async function loadH4() {                               // closed 4h bars only
+  try { h4 = (await klines("4h")).filter(b => b.time - TZ + 4 * 3600 <= Date.now() / 1000); dirty = true; } catch {}
+}
+setInterval(() => { if (h4.length && Date.now() / 1000 >= h4[h4.length - 1].time - TZ + 8 * 3600 + 10) loadH4(); }, 60000);
 function check(now, live) {
-  const coin = $("sym").value.replace("USDT", ""), G = "#26a69a", R = "#ef5350", D = "#8a90a0";
-  const btc = btcCloses.length >= 250 ? ruleAt(btcCloses) : null, v = now.votes, vb = btc ? btc.votes : null;
-  const dir = vb === null ? 0 : v >= FUT.long && vb >= FUT.btcLong ? 1 : v <= FUT.short && vb <= FUT.btcShort ? -1 : 0;
-  const dots = lights => lights.map(l => `<i class="dot" style="background:${l.up ? G : "#3a4152"}"></i>`).join("");
+  const sym = $("sym").value, coin = sym.replace("USDT", ""), G = "#26a69a", R = "#ef5350", D = "#8a90a0";
   $("ckCoin").textContent = coin;
-  const a = atr14();
   plan = null;
-  if (!a || !dir) {      // no trade: say what each side still needs
-    const need = [`롱: ${coin} ${FUT.long}표 이상 (지금 ${v})` + (coin === "BTC" ? "" : `, BTC ${FUT.btcLong}표 이상 (지금 ${vb ?? "-"})`),
-      `숏: ${coin} ${FUT.short}표 이하 (지금 ${v})` + (coin === "BTC" ? "" : `, BTC ${FUT.btcShort}표 이하 (지금 ${vb ?? "-"})`)];
-    $("ckDir").innerHTML = `<div class="verdict" style="color:${D}">대기</div><div class="lv-foot" style="margin:2px 0 0">오늘은 들어갈 자리 아님 · ${dots(now.lights)}</div>`;
-    $("ckCrit").innerHTML = `<div class="crit">${need.map(t => `<div class="cr mid"><span class="ic">–</span><span>${t}</span><span></span></div>`).join("")}</div>`;
-    ["ckOrder", "ckLadder"].forEach(id => $(id).innerHTML = "");
-    return;
-  }
-  const d = dir, L = d > 0;
-  // entry = the 9am (UTC 0) daily close the signal was decided on, as in the backtest; stop 2 ATR of the closed days
-  const ent = dailyCloses[dailyCloses.length - 1], oneR = 2 * a;
-  const stop = ent - d * oneR, stopPct = oneR / ent, be = ent + d * oneR;
-  // order sized so the stop (plus fees in and out) loses 3% of the wallet, capped at 30x (swing_200.py)
-  // Binance regular fees: maker 0.02% (limit orders), taker 0.05%
-  const acct = +$("acct").value || 0, riskPct = .03, lev = 30, FEE_M = .0002, FEE_T = .0005;
-  const notional = Math.min(acct * riskPct / (stopPct + FEE_M + FEE_T), acct * lev);
-  const min = Math.max(MIN_NOTIONAL[$("sym").value] ?? 5, (MIN_QTY[$("sym").value] ?? 0) * ent);
-  const size = Math.max(notional, min), qty = size / ent;           // below Binance's minimum the order goes in at the minimum
-  const entryFee = size * FEE_M, stopFee = size * (1 - d * stopPct) * FEE_T;
-  const bePx = ent * (L ? (1 + FEE_M) / (1 - FEE_T) : (1 - FEE_M) / (1 + FEE_T));   // limit in + market out paid back
-  const lossAll = size * stopPct + entryFee + stopFee, risk = lossAll / Math.max(acct, 1e-9);
-  // cross margin: the whole wallet backs the position (rough: ignores other positions and maintenance tiers)
-  const liqX = ent - d * (acct - .005 * size) / Math.max(qty, 1e-12), liqBad = L ? liqX > 0 && liqX >= stop : liqX <= stop;
-  plan = { dir: d, stop, be, preview: false };
-  // take-profits (tp3.py): 40% at +1.5R pays for the rest if it gets stopped, 30% at +3R, 20% at +5R, last 10% rides the trend
-  // a slice smaller than Binance's minimum quantity can't be placed and stays with the runner (BTC 0.001 can't be split)
-  let banked = -entryFee;
-  const minQ = MIN_QTY[$("sym").value] ?? 0;
-  const tps = [[1.5, .4], [3, .3], [5, .2]].map(([lv, fr], i) => { const px = ent + d * lv * oneR, ok = fr * qty >= minQ, fee = ok ? fr * size * (px / ent) * FEE_M : 0;
-    if (ok) banked += fr * size * lv * stopPct - fee; return { i, lv, fr, px, banked, ok }; });
-  plan.tps = tps.filter(t => t.ok).map(t => ({ price: t.px, text: `${t.i + 1}차 익절 ${Math.round(t.fr * 100)}% (${t.lv}R)` }));
-  const move = px => sgn(pct(px, ent)), usd = x => (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2);
-  // a miss = don't enter today
-  const miss = [
-    [risk <= riskPct + 5e-5, `최소 주문이 커서 손절 시 지갑 ${(risk * 100).toFixed(1)}%`],
-    [tps.every(t => t.ok), "수량이 작아 익절 3번에 못 나눔"],
-    [!liqBad, `청산가 ${fmt(liqX)}가 손절보다 가까움`],
-    [d * (live - stop) > 0, "이미 손절가를 지나감"],
-  ].filter(c => !c[0]).map(c => c[1]);
-  const go = !miss.length;
-  $("ckDir").innerHTML = `<div class="verdict" style="color:${go ? (L ? G : R) : D}">${L ? "롱" : "숏"} ${go ? "진입" : "패스"}</div>`
-    + `<div class="lv-foot" style="margin:2px 0 0">${coin} ${dots(now.lights)} ${v}/6${coin === "BTC" ? "" : ` · BTC ${vb}/6`} · 지금 ${fmt(live)} (진입가 대비 ${sgn(d * pct(live, ent))})</div>`;
-  $("ckCrit").innerHTML = go ? "" : `<div class="crit">${miss.map(t => `<div class="cr no"><span class="ic">✗</span><span>${t}</span><span></span></div>`).join("")}</div>`;
-  const rows = [
-    ...tps.map(t => ({ k: "tp gain" + (t.ok ? "" : " off"), px: t.px, nm: `${t.i + 1}차 익절 · 지정가`,
-      sub: t.ok ? `${Math.round(t.fr * 100)}% · ${(t.fr * qty).toPrecision(3)} ${coin}` : `${Math.round(t.fr * 100)}% · 최소 단위 미만`, pl: t.ok ? usd(t.banked) : "" })),
-    { k: "be gain", px: be, nm: "여기 오면 손절 → 본전", sub: `손절을 ${fmt(bePx)}로`, pl: "" },
-    { k: "entry done", px: ent, nm: `진입 · 지정가 ${L ? "롱" : "숏"}`, sub: `${qty.toPrecision(3)} ${coin} · 내일 9시까지`, pl: "" },
-    { k: "stop loss", px: stop, nm: "손절 · Stop Market", sub: `지갑의 ${(risk * 100).toFixed(2)}%`, pl: usd(-lossAll) },
-  ].sort((x, y) => y.px - x.px);
-  $("ckOrder").innerHTML = `<span>수량<b>${qty.toPrecision(3)} ${coin}</b></span><span>주문<b>${size.toFixed(1)} USDT</b></span>`
-    + `<span>증거금<b>${(size / lev).toFixed(1)}</b></span>`;
-  $("ckLadder").innerHTML = `<div class="lv-h"><span></span><span>가격</span><span>손익 USDT</span></div><div>${rows.map(r => `<div class="lv ${r.k}"><i></i><div class="nm">${r.nm}${r.sub ? `<small>${r.sub}</small>` : ""}</div>`
-      + `<div class="px">${fmt(r.px)}<small>${r.k.startsWith("entry") ? "" : move(r.px)}</small></div>`
-      + `<div class="pl">${r.pl}</div></div>`).join("")}</div>`
-    + `<div class="lv-foot">남은 10%는 ${L ? "최고" : "최저"} 종가에서 ${fmt(2 * a)} ${L ? "아래로 손절을 따라 올려요" : "위로 손절을 따라 내려요"} · 9시 종가에 ${coin} 표가 ${L ? `${FUT.long} 미만` : `${FUT.short} 초과`}면 전량 청산</div>`;
+  const rg = regimeNow();
+  if (!rg || h4.length < 300) { $("ckDir").innerHTML = `<div class="dim">4시간봉 불러오는 중</div>`; ["ckCrit", "ckOrder", "ckLadder"].forEach(id => $(id).innerHTML = ""); return; }
+  const name = PICKS[rg.code], st = IND[name](h4), s = st[st.length - 1];
+  let k = st.length - 1;
+  while (k > 0 && st[k - 1] === s) k--;                 // bar whose close started the current state
+  const last = h4[h4.length - 1], hm = t => new Date((t - TZ) * 1000).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", hour12: false });
+  const fresh = k === st.length - 1, startPx = h4[k].close, nextClose = last.time + 8 * 3600;
+  const d = new Date(), qNow = `${d.getUTCFullYear()}Q${Math.floor(d.getUTCMonth() / 3) + 1}`;
+  const acct = +$("acct").value || 0, mult = +$("mult").value || 1, notional = acct * mult / 3;     // tested: wallet split over BTC/ETH/SOL
+  const min = Math.max(MIN_NOTIONAL[sym] ?? 5, (MIN_QTY[sym] ?? 0) * live), qty = Math.max(notional, min) / live;
+  const word = s > 0 ? "롱" : s < 0 ? "숏" : "현금";
+  $("ckDir").innerHTML = `<div class="verdict" style="color:${s > 0 ? G : s < 0 ? R : D}">${word}</div>`
+    + `<div class="lv-foot" style="margin:2px 0 0">${s ? `${fresh ? "방금 바뀜 → 지금 진입" : `${hm(h4[k].time + 4 * 3600)} 마감부터 ${word} (${st.length - 1 - k}봉째)`}` : "포지션 없이 쉬는 구간 · 들고 있으면 청산"}</div>`;
+  const row = (nm, vl, cls = "mid") => `<div class="cr ${cls}"><span class="ic">${cls === "no" ? "!" : "·"}</span><span>${nm}</span><span class="vl">${vl}</span></div>`;
+  $("ckCrit").innerHTML = `<div class="crit">`
+    + row("장세", `${REG_NAME[rg.code]} · 200일선 ${sgn(rg.above)} · ADX ${rg.adx.toFixed(0)}`)
+    + row("이번 분기 지표", `${name} (${PICKS.q})`)
+    + (qNow !== PICKS.q ? row("분기 바뀜", "지표 다시 뽑아야 함", "no") : "")
+    + (notional < min ? row("최소 주문", `${min.toFixed(0)} USDT > 코인당 ${notional.toFixed(0)} → 최소로 들어감`, "no") : "")
+    + `</div>`;
+  $("ckOrder").innerHTML = s ? `<span>시장가 ${word}<b>${qty.toPrecision(3)} ${coin}</b></span><span>주문<b>${(qty * live).toFixed(1)} USDT</b></span>` : "";
+  $("ckLadder").innerHTML = `<div class="crit">`
+    + (s ? row("신호 시작가", `${fmt(startPx)} → 지금 ${fmt(live)} (${sgn(s * pct(live, startPx))})`)
+         + row("청산", `4시간 마감에 이 칸이 ${word}이 아니게 되면 전량 시장가`) : "")
+    + row("다음 확인", `${hm(nextClose)} (한국 1·5·9·13·17·21시 마감)`)
+    + `</div>`;
 }
 
 // 50/200-day averages as lines on the daily chart (kept out of the autoscale so they never squash the candles)
@@ -703,7 +748,7 @@ function connect() {
 
 async function start() {
   loadShapes(); loadFunding();
-  initChart(); data = []; hist = []; prof = null; profKey = null; hasMore = true; livePrice = null;
+  initChart(); data = []; hist = []; h4 = []; prof = null; profKey = null; hasMore = true; livePrice = null;
   try {
     $("upd").textContent = "과거 데이터 불러오는 중…";
     [data] = await Promise.all([klines($("iv").value), loadDaily(true)]);
@@ -711,11 +756,11 @@ async function start() {
     const n = { "1d": 180, "1w": 150 }[$("iv").value] || 200;
     chart.timeScale().setVisibleLogicalRange({ from: data.length - n, to: data.length + 5 });
   } catch (e) { $("upd").textContent = "데이터 오류: " + e.message; return; }
-  connect();
+  connect(); loadH4();
 }
 
 ["sym", "mkt", "iv"].forEach(id => $(id).addEventListener("change", start));
-for (const [id, def] of [["acct", 200]]) {
+for (const [id, def] of [["acct", 200], ["mult", 1]]) {
   try { $(id).value = localStorage.getItem(id) ?? def; } catch { $(id).value = def; }
   for (const ev of ["input", "change"]) $(id).addEventListener(ev, () => { try { localStorage.setItem(id, $(id).value); } catch {} dirty = true; });
 }
