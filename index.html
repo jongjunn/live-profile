@@ -15,7 +15,6 @@
   #price { font-size:24px; font-weight:700; margin-left:auto; font-variant-numeric:tabular-nums; }
   #dot { width:9px; height:9px; border-radius:50%; background:var(--down); display:inline-block; margin-right:5px; }
   main { display:flex; flex:1; min-height:0; }
-  body:not(.detail) aside { display:none; }
   button { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 9px; font:inherit; cursor:pointer; }
   #ohlc { position:absolute; left:52px; top:8px; z-index:11; pointer-events:none; font-size:12px; background:rgba(19,23,34,.88);
           padding:3px 8px; border-radius:4px; font-variant-numeric:tabular-nums; }
@@ -36,13 +35,11 @@
   .verdict { font-size:30px; font-weight:800; letter-spacing:-.5px; line-height:1.2; margin-top:6px; }
   .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; }
   .rule { height:1px; background:var(--line); margin:14px 0 12px; }
-  .inputs { display:grid; grid-template-columns:1fr 92px; gap:8px; align-items:end; }
   .field span { display:block; font-size:11px; color:var(--dim); margin-bottom:3px; }
   .field .in { display:flex; gap:4px; }
   .field input { width:100%; min-width:0; background:var(--panel); border:1px solid var(--line); border-radius:6px; color:var(--text);
                  padding:6px 8px; font:600 14px -apple-system, "Apple SD Gothic Neo", sans-serif; font-variant-numeric:tabular-nums; }
-  .field input:focus, .tk-head select:focus, #entryNow:focus { outline:none; border-color:#2962ff; }
-  #entryNow { padding:0 8px; font-size:12px; white-space:nowrap; }
+  .field input:focus { outline:none; border-color:#2962ff; }
   .order { display:flex; justify-content:space-between; align-items:baseline; margin-top:8px; font-size:12px; color:var(--dim); font-variant-numeric:tabular-nums; }
   .order b { color:var(--text); font-size:14px; margin-left:4px; }
   .lv-note { font-size:12px; color:#f0a202; margin-bottom:4px; }
@@ -87,7 +84,6 @@
   <label>가격축 <select id="scale"><option value="0" selected>일반</option><option value="1">로그</option></select></label>
   <span class="dim"><span id="dot"></span><span id="upd">연결 중…</span></span>
   <button id="fitBtn" title="세로 범위를 캔들에 다시 맞춤">맞춤</button>
-  <label>지갑 USDT <input id="acct" type="number" min="1" step="any" style="width:70px"></label>
   <div id="price">-</div>
 </header>
 <div id="status"></div>
@@ -103,20 +99,14 @@
       <button id="clearDraw" title="그린 것 전부 삭제">🗑</button>
     </div></div>
   <aside>
-    <div class="tk-head"><div class="t"><b id="ckCoin"></b>선물</div>
-      <select id="viewDir" title="다른 방향으로 미리보기"><option value="">신호대로</option><option value="1">롱으로</option><option value="-1">숏으로</option></select></div>
+    <div class="tk-head"><div class="t"><b id="ckCoin"></b>선물 타점</div>
+      <label class="field"><span>지갑 USDT</span><input id="acct" type="number" min="1" step="any" style="width:84px"></label></div>
     <div id="ckDir"></div>
     <div id="ckCrit"></div>
-    <div class="rule"></div>
-    <div class="inputs">
-      <label class="field"><span>진입가</span><div class="in"><input id="entry" type="number" min="0" step="any" placeholder="지금 가격"><button id="entryNow" type="button">지금가</button></div></label>
-      <label class="field"><span>손절 시 잃을 % (최대 5)</span><input id="risk" type="number" min="0.1" max="5" step="0.5"></label>
-      <label class="field"><span>레버리지</span><input id="lev" type="number" min="1" max="125" step="1"></label>
-    </div>
     <div class="order" id="ckOrder"></div>
     <div class="rule"></div>
     <div id="ckLadder"></div>
-    <div class="tk-foot">데모로 검증 중인 규칙이에요. 투자 조언 아님.</div>
+    <div class="tk-foot">진입가 = 오늘 9시 일봉 종가 (백테스트가 들어간 가격). 이미 들고 있으면 추가 진입 안 함. 손절 1번 = 지갑 3%, 교차 30배. 투자 조언 아님.</div>
   </aside>
 </main>
 <script>
@@ -360,81 +350,64 @@ function check(now, live) {
   const dir = vb === null ? 0 : v >= FUT.long && vb >= FUT.btcLong ? 1 : v <= FUT.short && vb <= FUT.btcShort ? -1 : 0;
   const dots = lights => lights.map(l => `<i class="dot" style="background:${l.up ? G : "#3a4152"}"></i>`).join("");
   $("ckCoin").textContent = coin;
-  $("ckDir").innerHTML = `<div class="verdict" style="color:${dir > 0 ? G : dir < 0 ? R : D}">${dir > 0 ? "롱 가능" : dir < 0 ? "숏 가능" : "대기"}</div>`;
   const a = atr14();
   plan = null;
-  if (!a) { $("ckLadder").innerHTML = `<div class="dim">ATR 계산 중</div>`; ["ckOrder", "ckCrit"].forEach(id => $(id).innerHTML = ""); return; }
-  const force = +$("viewDir").value, d = force || dir || 1, preview = !dir || (force && force !== dir);
-  // a typed entry keeps the ATR from the moment it was typed, so its stop / take-profits stay put as new days come in
-  const typed = +$("entry").value > 0, ent = typed ? +$("entry").value : live, oneR = 2 * (typed && entryAtr || a);
+  if (!a || !dir) {      // no trade: say what each side still needs
+    const need = [`롱: ${coin} ${FUT.long}표 이상 (지금 ${v})` + (coin === "BTC" ? "" : `, BTC ${FUT.btcLong}표 이상 (지금 ${vb ?? "-"})`),
+      `숏: ${coin} ${FUT.short}표 이하 (지금 ${v})` + (coin === "BTC" ? "" : `, BTC ${FUT.btcShort}표 이하 (지금 ${vb ?? "-"})`)];
+    $("ckDir").innerHTML = `<div class="verdict" style="color:${D}">대기</div><div class="lv-foot" style="margin:2px 0 0">오늘은 들어갈 자리 아님 · ${dots(now.lights)}</div>`;
+    $("ckCrit").innerHTML = `<div class="crit">${need.map(t => `<div class="cr mid"><span class="ic">–</span><span>${t}</span><span></span></div>`).join("")}</div>`;
+    ["ckOrder", "ckLadder"].forEach(id => $(id).innerHTML = "");
+    return;
+  }
+  const d = dir, L = d > 0;
+  // entry = the 9am (UTC 0) daily close the signal was decided on, as in the backtest; stop 2 ATR of the closed days
+  const ent = dailyCloses[dailyCloses.length - 1], oneR = 2 * a;
   const stop = ent - d * oneR, stopPct = oneR / ent, be = ent + d * oneR;
-  // order sized so the stop (plus taker fees in and out) loses the chosen % of the wallet, capped by the leverage (swing_200.py)
-  // Binance regular fees: maker 0.02% (limit take-profits), taker 0.05%
-  const acct = +$("acct").value || 0, riskPct = Math.min(+$("risk").value || 0, 5) / 100, lev = Math.max(+$("lev").value || 1, 1), FEE_M = .0002, FEE_T = .0005;
-  const notional = Math.min(acct * riskPct / (stopPct + 2 * FEE_T), acct * lev);
+  // order sized so the stop (plus fees in and out) loses 3% of the wallet, capped at 30x (swing_200.py)
+  // Binance regular fees: maker 0.02% (limit orders), taker 0.05%
+  const acct = +$("acct").value || 0, riskPct = .03, lev = 30, FEE_M = .0002, FEE_T = .0005;
+  const notional = Math.min(acct * riskPct / (stopPct + FEE_M + FEE_T), acct * lev);
   const min = Math.max(MIN_NOTIONAL[$("sym").value] ?? 5, (MIN_QTY[$("sym").value] ?? 0) * ent);
   const size = Math.max(notional, min), qty = size / ent;           // below Binance's minimum the order goes in at the minimum
-  const entryFee = size * FEE_T, stopFee = size * (1 - d * stopPct) * FEE_T;
-  const bePx = ent * (d > 0 ? (1 + FEE_T) / (1 - FEE_T) : (1 - FEE_T) / (1 + FEE_T));   // taker in + taker out paid back
+  const entryFee = size * FEE_M, stopFee = size * (1 - d * stopPct) * FEE_T;
+  const bePx = ent * (L ? (1 + FEE_M) / (1 - FEE_T) : (1 - FEE_M) / (1 + FEE_T));   // limit in + market out paid back
   const lossAll = size * stopPct + entryFee + stopFee, risk = lossAll / Math.max(acct, 1e-9);
   // cross margin: the whole wallet backs the position (rough: ignores other positions and maintenance tiers)
-  const liqX = ent - d * (acct - .005 * size) / Math.max(qty, 1e-12), liqBad = d > 0 ? liqX > 0 && liqX >= stop : liqX <= stop;
-  // isolated margin = only size/lev backs it: liquidated after a move of about 1/lev minus maintenance
-  const liqIso = ent * (1 - d * (1 / lev - .005)), isoBad = d > 0 ? liqIso >= stop : liqIso <= stop;
-  if (dir || force) plan = { dir: d, stop, be, preview };
+  const liqX = ent - d * (acct - .005 * size) / Math.max(qty, 1e-12), liqBad = L ? liqX > 0 && liqX >= stop : liqX <= stop;
+  plan = { dir: d, stop, be, preview: false };
   // take-profits (tp3.py): 40% at +1.5R pays for the rest if it gets stopped, 30% at +3R, 20% at +5R, last 10% rides the trend
   // a slice smaller than Binance's minimum quantity can't be placed and stays with the runner (BTC 0.001 can't be split)
   let banked = -entryFee;
   const minQ = MIN_QTY[$("sym").value] ?? 0;
   const tps = [[1.5, .4], [3, .3], [5, .2]].map(([lv, fr], i) => { const px = ent + d * lv * oneR, ok = fr * qty >= minQ, fee = ok ? fr * size * (px / ent) * FEE_M : 0;
     if (ok) banked += fr * size * lv * stopPct - fee; return { i, lv, fr, px, banked, ok }; });
-  if (plan) plan.tps = tps.filter(t => t.ok).map(t => ({ price: t.px, text: `${t.i + 1}차 익절 ${Math.round(t.fr * 100)}% (${t.lv}R)` }));
-  const hit = px => d * (live - px) >= 0, move = px => sgn(pct(px, ent)), usd = x => (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2);
+  plan.tps = tps.filter(t => t.ok).map(t => ({ price: t.px, text: `${t.i + 1}차 익절 ${Math.round(t.fr * 100)}% (${t.lv}R)` }));
+  const move = px => sgn(pct(px, ent)), usd = x => (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2);
+  // a miss = don't enter today
+  const miss = [
+    [risk <= riskPct + 5e-5, `최소 주문이 커서 손절 시 지갑 ${(risk * 100).toFixed(1)}%`],
+    [tps.every(t => t.ok), "수량이 작아 익절 3번에 못 나눔"],
+    [!liqBad, `청산가 ${fmt(liqX)}가 손절보다 가까움`],
+    [d * (live - stop) > 0, "이미 손절가를 지나감"],
+  ].filter(c => !c[0]).map(c => c[1]);
+  const go = !miss.length;
+  $("ckDir").innerHTML = `<div class="verdict" style="color:${go ? (L ? G : R) : D}">${L ? "롱" : "숏"} ${go ? "진입" : "패스"}</div>`
+    + `<div class="lv-foot" style="margin:2px 0 0">${coin} ${dots(now.lights)} ${v}/6${coin === "BTC" ? "" : ` · BTC ${vb}/6`} · 지금 ${fmt(live)} (진입가 대비 ${sgn(d * pct(live, ent))})</div>`;
+  $("ckCrit").innerHTML = go ? "" : `<div class="crit">${miss.map(t => `<div class="cr no"><span class="ic">✗</span><span>${t}</span><span></span></div>`).join("")}</div>`;
   const rows = [
-    ...tps.map(t => ({ k: "tp gain" + (hit(t.px) ? " done" : "") + (t.ok ? "" : " off"), px: t.px, nm: `${t.i + 1}차 익절`,
+    ...tps.map(t => ({ k: "tp gain" + (t.ok ? "" : " off"), px: t.px, nm: `${t.i + 1}차 익절 · 지정가`,
       sub: t.ok ? `${Math.round(t.fr * 100)}% · ${(t.fr * qty).toPrecision(3)} ${coin}` : `${Math.round(t.fr * 100)}% · 최소 단위 미만`, pl: t.ok ? usd(t.banked) : "" })),
-    { k: "be gain" + (hit(be) ? " done" : ""), px: be, nm: "본전 이동", sub: `손절을 ${fmt(bePx)}로`, pl: "" },
-    { k: "entry done", px: ent, nm: typed ? "진입" : "진입 (지금가)", sub: typed ? `지금 ${fmt(live)}` : "", pl: typed ? usd(d * (live - ent) * qty - entryFee - qty * live * FEE_T) : "", now: typed },
-    { k: "stop loss", px: stop, nm: "손절", sub: `지갑의 ${(risk * 100).toFixed(2)}%`, pl: usd(-lossAll) },
+    { k: "be gain", px: be, nm: "여기 오면 손절 → 본전", sub: `손절을 ${fmt(bePx)}로`, pl: "" },
+    { k: "entry done", px: ent, nm: `진입 · 지정가 ${L ? "롱" : "숏"}`, sub: `${qty.toPrecision(3)} ${coin} · 내일 9시까지`, pl: "" },
+    { k: "stop loss", px: stop, nm: "손절 · Stop Market", sub: `지갑의 ${(risk * 100).toFixed(2)}%`, pl: usd(-lossAll) },
   ].sort((x, y) => y.px - x.px);
-  $("ckOrder").innerHTML = `<span>주문<b>${size.toFixed(1)} USDT</b>${size > notional ? " 최소 주문" : ""}</span><span>수량<b>${qty.toPrecision(3)} ${coin}</b></span>`
+  $("ckOrder").innerHTML = `<span>수량<b>${qty.toPrecision(3)} ${coin}</b></span><span>주문<b>${size.toFixed(1)} USDT</b></span>`
     + `<span>증거금<b>${(size / lev).toFixed(1)}</b></span>`;
-  $("ckLadder").innerHTML = (preview ? `<div class="lv-note">${d > 0 ? "롱" : "숏"}으로 들어간다면</div>` : "")
-    + `<div class="lv-h"><span></span><span>가격</span><span>손익 USDT</span></div><div>${rows.map(r => `<div class="lv ${r.k}"><i></i><div class="nm">${r.nm}${r.sub ? `<small>${r.sub}</small>` : ""}</div>`
-      + `<div class="px">${fmt(r.px)}<small>${r.now ? sgn(d * pct(live, ent)) : r.k.startsWith("entry") ? "" : move(r.px)}</small></div>`
+  $("ckLadder").innerHTML = `<div class="lv-h"><span></span><span>가격</span><span>손익 USDT</span></div><div>${rows.map(r => `<div class="lv ${r.k}"><i></i><div class="nm">${r.nm}${r.sub ? `<small>${r.sub}</small>` : ""}</div>`
+      + `<div class="px">${fmt(r.px)}<small>${r.k.startsWith("entry") ? "" : move(r.px)}</small></div>`
       + `<div class="pl">${r.pl}</div></div>`).join("")}</div>`
-    + `<div class="lv-foot">남은 10%는 ${d > 0 ? "최고" : "최저"} 종가에서 ${fmt(2 * a)} ${d > 0 ? "아래로 손절을 따라 올려요" : "위로 손절을 따라 내려요"}</div>`;
-  // checklist: 규칙 = the tested system (a miss means skip); 참고 = common context checks that did not improve the backtest
-  const L = d > 0, z = prof ? nearest(ent) : null, way = z && (L ? z.inside || z.above[0] : z.inside || z.below[0]);
-  const t1 = tps[0].px, block = prof && prof.zones.filter(q => q.hi > Math.min(ent, t1) && q.lo < Math.max(ent, t1) && !(q.lo <= ent && ent <= q.hi))
-    .sort((x, y) => L ? x.lo - y.lo : y.hi - x.hi)[0];
-  const ma50 = sma(dailyCloses, 50), bma = sma(btcCloses, 200), bLast = btcCloses[btcCloses.length - 1];
-  const fr = $("mkt").value === "perp" && funding ? funding.rate : null, hot = fr !== null && (L ? fr > .0003 : fr < -.0001);
-  const rules = [
-    [L ? v >= FUT.long : v <= FUT.short, `${coin} 추세`, `${dots(now.lights)} ${v}/6`],
-    ...(coin !== "BTC" ? [[vb !== null && (L ? vb >= FUT.btcLong : vb <= FUT.btcShort), "BTC 추세", btc ? `${dots(btc.lights)} ${vb}/6` : "-"]] : []),
-    [risk <= riskPct + 5e-5, `손절 손실 ${+(riskPct * 100).toFixed(2)}% 이하`, `지갑의 ${(risk * 100).toFixed(2)}%`],
-    [tps.every(t => t.ok), "익절 3번 나눠짐", tps.every(t => t.ok) ? "가능" : "수량이 최소 단위 미만"],
-    [!liqBad, "교차 마진 청산가가 손절 뒤", liqBad ? fmt(liqX) : (L && liqX <= 0) ? "청산 없음" : fmt(liqX)],
-  ];
-  const refs0 = [[!isoBad, `격리 ${lev}배 청산가`, isoBad ? `${fmt(liqIso)} 손절 전 청산 → 교차로` : fmt(liqIso)]];
-  const refs = [
-    ...refs0,
-    [bma === null ? null : (bLast > bma) === L, "장세 (BTC 200일선)", bma === null ? "-" : bLast > bma ? "상승장" : "하락장"],
-    [ma50 === null ? null : (live > ma50) === L, "50일선", ma50 === null ? "-" : `${live > ma50 ? "위" : "아래"} ${sgn(pct(live, ma50))}`],
-    [fr === null ? null : !hot, "펀딩 과열 아님", fr === null ? "-" : `${(fr * 100).toFixed(4)}% · 8시간 ${(fr >= 0) === L ? "−" : "+"}${(Math.abs(fr) * size).toFixed(4)}`],
-    [prof ? !block : null, "1차 익절 전 매물대 없음", block ? `${fmt(block.lo)}~${fmt(block.hi)}` : "없음"],
-    [!way || !way.lean ? null : way.lean === d, "길목 매물대 쏠림", way ? LEAN[way.lean][0] : "없음"],
-  ];
-  const group = (name, list) => { const ok = list.filter(c => c[0] === true).length, no = list.filter(c => c[0] === false).length;
-    return `<div class="crit-h">${name}<b class="ok">${ok}</b>통과<b class="no">${no}</b>실패</div>`
-      + list.map(([st, nm, vl]) => `<div class="cr ${st === true ? "ok" : st === false ? "no" : "mid"}"><span class="ic">${st === true ? "✓" : st === false ? "✗" : "–"}</span><span>${nm}</span><span class="vl">${vl}</span></div>`).join(""); };
-  $("ckCrit").innerHTML = `<div class="crit">${group("규칙", rules)}${group("참고", refs)}</div>`;
-  const miss = rules.filter(c => !c[0]).map(c => c[1]);
-  $("status").insertAdjacentHTML("beforeend", !dir ? `<span class="chip"><span class="big" style="color:${D}">대기</span> 들어갈 자리 아님</span>`
-    : miss.length ? `<span class="chip"><span class="big" style="color:${D}">${L ? "롱" : "숏"} 패스</span> ${miss.join(", ")}</span>`
-    : `<span class="chip"><span class="big" style="color:${L ? G : R}">${L ? "롱" : "숏"} 진입</span> 시장가 ${fmt(ent)} · 수량 <b>${qty.toPrecision(3)} ${coin}</b> · 손절 <b>${fmt(stop)}</b>`
-      + ` · 익절 ${tps.filter(t => t.ok).map(t => `${Math.round(t.fr * 100)}% ${fmt(t.px)}`).join(" / ")} · +1R ${fmt(be)} 오면 손절 본전</span>`);
+    + `<div class="lv-foot">남은 10%는 ${L ? "최고" : "최저"} 종가에서 ${fmt(2 * a)} ${L ? "아래로 손절을 따라 올려요" : "위로 손절을 따라 내려요"} · 9시 종가에 ${coin} 표가 ${L ? `${FUT.long} 미만` : `${FUT.short} 초과`}면 전량 청산</div>`;
 }
 
 // 50/200-day averages as lines on the daily chart (kept out of the autoscale so they never squash the candles)
@@ -728,8 +701,6 @@ function connect() {
   };
 }
 
-const entryKey = () => `entry_${$("mkt").value}_${$("sym").value}`;
-let entryAtr = null;
 async function start() {
   loadShapes(); loadFunding();
   initChart(); data = []; hist = []; prof = null; profKey = null; hasMore = true; livePrice = null;
@@ -744,14 +715,11 @@ async function start() {
 }
 
 ["sym", "mkt", "iv"].forEach(id => $(id).addEventListener("change", start));
-for (const [id, def] of [["acct", 200], ["risk", 3], ["lev", 30]]) {
+for (const [id, def] of [["acct", 200]]) {
   try { $(id).value = localStorage.getItem(id) ?? def; } catch { $(id).value = def; }
   for (const ev of ["input", "change"]) $(id).addEventListener(ev, () => { try { localStorage.setItem(id, $(id).value); } catch {} dirty = true; });
 }
 $("mkt").addEventListener("change", () => { try { localStorage.setItem("mkt", $("mkt").value); } catch {} });
-const saveEntry = () => { entryAtr = atr14(); try { localStorage.setItem(entryKey(), JSON.stringify({ p: $("entry").value, a: entryAtr })); } catch {} dirty = true; };
-for (const ev of ["input", "change"]) $("entry").addEventListener(ev, saveEntry);
-$("entryNow").addEventListener("click", () => { const p = nowPrice(); if (p) { $("entry").value = +p.toPrecision(6); saveEntry(); } });
 ["pr", "bins", "hl"].forEach(id => $(id).addEventListener("change", () => { profKey = null; dirty = true; chart.timeScale().applyOptions({}); }));
 $("scale").addEventListener("change", () => { chart.priceScale("right").applyOptions({ mode: +$("scale").value }); dirty = true; });
 // the overlay is redrawn in the same frame the chart's view changes (zoom, scroll, price-axis drag, autoscale),
@@ -789,7 +757,6 @@ $("chartWrap").addEventListener("pointermove", e => {       // live preview whil
   mouse = t === null || p === null ? null : { t, p }; lastSig = "";
 });
 document.querySelectorAll("#tools button[data-tool]").forEach(b => b.addEventListener("click", () => setTool(b.dataset.tool)));
-$("viewDir").addEventListener("change", () => dirty = true);
 $("clearDraw").addEventListener("click", () => { if (shapes.length && confirm("그린 것을 전부 지울까요?")) { shapes = []; saveShapes(); setTool(""); } });
 document.addEventListener("keydown", e => { if (e.key === "Escape") setTool(""); });
 setInterval(() => loadDaily(false).then(() => { markers(); updateMAs(); }).catch(() => {}), 60000);
