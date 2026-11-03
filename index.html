@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>실시간 매물대</title>
-<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.0.9/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root { --bg:#131722; --panel:#1b2030; --line:#2a3042; --text:#d1d4dc; --dim:#8a90a0; --up:#26a69a; --down:#ef5350; }
   * { box-sizing:border-box; }
@@ -15,7 +15,7 @@
   #price { font-size:24px; font-weight:700; margin-left:auto; font-variant-numeric:tabular-nums; }
   #dot { width:9px; height:9px; border-radius:50%; background:var(--down); display:inline-block; margin-right:5px; }
   main { display:flex; flex:1; min-height:0; }
-  #layers .lay { padding:3px 7px; font-size:12px; margin-right:2px; } #layers .lay.off { opacity:.4; text-decoration:line-through; }
+  #layers { display:flex; flex-wrap:wrap; gap:4px; } #layers .lay { padding:3px 8px; font-size:12px; } #layers .lay.off { opacity:.4; text-decoration:line-through; }
   button { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 9px; font:inherit; cursor:pointer; }
   #ohlc { position:absolute; left:52px; top:8px; z-index:11; pointer-events:none; font-size:12px; background:rgba(19,23,34,.88);
           padding:3px 8px; border-radius:4px; font-variant-numeric:tabular-nums; }
@@ -84,7 +84,6 @@
     <option value="80">보통</option><option value="140">세밀</option></select></label>
   <label>가격축 <select id="scale"><option value="0" selected>일반</option><option value="1">로그</option></select></label>
   <span class="dim"><span id="dot"></span><span id="upd">연결 중…</span></span>
-  <span id="layers"></span>
   <button id="fitBtn" title="세로 범위를 캔들에 다시 맞춤">맞춤</button>
   <div id="price">-</div>
 </header>
@@ -109,6 +108,13 @@
     <div class="order" id="ckOrder"></div>
     <div class="rule"></div>
     <div id="ckLadder"></div>
+    <div class="rule"></div>
+    <div class="crit-h">화면에 보이기 <span class="dim" style="font-size:11px">누르면 켜기/끄기</span></div>
+    <div id="layers"></div>
+    <div class="lv-foot" style="margin:8px 0 0;line-height:1.7">
+      <b style="color:#26a69a">▲ 롱</b> 롱 진입 (숏 들고 있었으면 정리하고 롱) · <b style="color:#ef5350">▼ 숏</b> 숏 진입<br>
+      <b style="color:#8a90a0">● 롱 끝 / 숏 끝</b> 포지션 정리하고 현금으로 쉬기. Squeeze 지표(상승횡보)만 이렇게 쉬고, 장세가 바뀌어 지표가 바뀔 때도 생김<br>
+      화살표는 4시간 마감 다음 봉에 찍힘 = 그 봉 시작가로 매매. 차트가 좁으면 글자 없이 점만 보임</div>
     <div class="tk-foot">장세(200일선·ADX)마다 분기별로 성적 1등 지표를 골라 4시간봉 신호대로 들고 있는 방식 (research_indicator_regimes.md).
       테스트 2024-07~2026-10 BTC/ETH/SOL, 배율 1, 지갑을 3코인에 나눔, 1년 284번 매매: 편도 수수료 0.05%(바이낸스 시장가)면 연 +24%, 0.1%면 +13%, 최대 낙폭 -34~-36%. 통계 증명 전. 교차 마진. 투자 조언 아님.</div>
   </aside>
@@ -281,7 +287,7 @@ function setTool(t) {
   document.querySelectorAll("#tools button[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
 }
 function chartClick(x, yy) {                               // a click (not a drag) on the price pane while a tool is active
-  if (!tool || x > chart.timeScale().width() || yy > $("chartWrap").clientHeight - 28) return;
+  if (!tool || x > chart.timeScale().width() || yy > chart.panes()[0].getHeight()) return;
   const t = xToTime(x), p = series.coordinateToPrice(yy);
   if (t === null || p === null) return;
   if (tool === "del") { const i = hitShape(x, yy); if (i >= 0) shapes.splice(i, 1); }
@@ -435,7 +441,7 @@ function applyLayers() {                                // series that live in t
   $("layers").innerHTML = LAYERS.map(([k, n]) => `<button class="lay${show[k] ? "" : " off"}" data-k="${k}">${n}</button>`).join("");
   if (!chart || !series) return;
   [ma50, ma200].forEach(x => x && x.applyOptions({ visible: show.ma }));
-  volume && volume.applyOptions({ visible: show.vol });
+  volume.applyOptions({ visible: show.vol });
   markKey = null; drawInd(); dirty = true;
 }
 applyLayers();
@@ -443,29 +449,36 @@ $("layers").addEventListener("click", e => { const k = e.target.dataset && e.tar
   show[k] = !show[k]; try { localStorage.setItem("layers", JSON.stringify(show)); } catch {} applyLayers(); });
 let indS = [];
 function drawInd() {
-  indS.forEach(x => chart.removeSeries(x)); indS = [];
-  series.priceScale().applyOptions({ scaleMargins: { top: .06, bottom: .15 } });
-  if ($("iv").value !== "4h" || !data.length || !show.ind) return;
-  const rg = regimeNow(); if (!rg || rg.code < 0) return;
+  indS.forEach(x => chart.removeSeries(x)); indS = [];      // an emptied pane is removed by the chart library
+  if ($("iv").value !== "4h" || !data.length || !show.ind) return fitPanes();
+  const rg = regimeNow(); if (!rg || rg.code < 0) return fitPanes();
   const name = PICKS[rg.code], st = IND[name](data), t = data.map(b => b.time), ok = Number.isFinite;
-  const add = (type, opt, pts) => { const x = chart[type]({ priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...opt }); x.setData(pts); indS.push(x); };
+  const add = (type, opt, pts, pane) => { const x = chart.addSeries(LightweightCharts[type], { priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...opt }, pane);
+    x.setData(pts); indS.push(x); };
   if (name === "SuperTrend") {                          // the active band: below price while long, above while short
-    add("addLineSeries", { lineWidth: 2, title: "SuperTrend", autoscaleInfoProvider: () => null },
-      t.map((x, i) => st[i] > 0 && ok(st.fl[i]) ? { time: x, value: st.fl[i], color: "#26a69a" } : st[i] < 0 && ok(st.fu[i]) ? { time: x, value: st.fu[i], color: "#ef5350" } : { time: x }));
-    return;
+    add("LineSeries", { lineWidth: 2, title: "SuperTrend", autoscaleInfoProvider: () => null },
+      t.map((x, i) => st[i] > 0 && ok(st.fl[i]) ? { time: x, value: st.fl[i], color: "#26a69a" } : st[i] < 0 && ok(st.fu[i]) ? { time: x, value: st.fu[i], color: "#ef5350" } : { time: x }), 0);
+    return fitPanes();
   }
-  series.priceScale().applyOptions({ scaleMargins: { top: .06, bottom: .33 } });
-  const o = { priceScaleId: "ind" };
+  // price / indicator / volume: the first indicator series joins the volume pane, then volume moves to a new pane below
+  // (pane.moveTo asserts while a fresh chart is not laid out yet; series.moveToPane does not)
+  const first = (type, opt, pts) => { add(type, opt, pts, 1); volume.moveToPane(chart.panes().length); };
   if (name === "VW-MACD") {
-    add("addHistogramSeries", o, t.map((x, i) => ok(st.m[i]) && ok(st.sg[i]) ? { time: x, value: st.m[i] - st.sg[i], color: st.m[i] >= st.sg[i] ? "rgba(38,166,154,.5)" : "rgba(239,83,80,.5)" } : { time: x }));
-    add("addLineSeries", { ...o, color: "#2962ff", lineWidth: 1, title: "VW-MACD" }, t.map((x, i) => ok(st.m[i]) ? { time: x, value: st.m[i] } : { time: x }));
-    add("addLineSeries", { ...o, color: "#ff9800", lineWidth: 1, title: "신호선" }, t.map((x, i) => ok(st.sg[i]) ? { time: x, value: st.sg[i] } : { time: x }));
+    first("HistogramSeries", {}, t.map((x, i) => ok(st.m[i]) && ok(st.sg[i]) ? { time: x, value: st.m[i] - st.sg[i], color: st.m[i] >= st.sg[i] ? "rgba(38,166,154,.5)" : "rgba(239,83,80,.5)" } : { time: x }));
+    add("LineSeries", { color: "#2962ff", lineWidth: 1, title: "VW-MACD" }, t.map((x, i) => ok(st.m[i]) ? { time: x, value: st.m[i] } : { time: x }), 1);
+    add("LineSeries", { color: "#ff9800", lineWidth: 1, title: "신호선" }, t.map((x, i) => ok(st.sg[i]) ? { time: x, value: st.sg[i] } : { time: x }), 1);
   } else {                                              // momentum bars; dots on zero: orange = squeezed, grey = released
-    add("addHistogramSeries", { ...o, title: "Squeeze" }, t.map((x, i) => ok(st.mom[i]) ? { time: x, value: st.mom[i],
+    first("HistogramSeries", { title: "Squeeze" }, t.map((x, i) => ok(st.mom[i]) ? { time: x, value: st.mom[i],
       color: st.mom[i] >= 0 ? (st.mom[i] >= st.mom[i - 1] ? "#26a69a" : "rgba(38,166,154,.45)") : (st.mom[i] <= st.mom[i - 1] ? "#ef5350" : "rgba(239,83,80,.45)") } : { time: x }));
-    add("addLineSeries", { ...o, lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2 }, t.map((x, i) => ({ time: x, value: 0, color: st.on[i] ? "#f0a202" : "#5d6475" })));
+    add("LineSeries", { lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2 }, t.map((x, i) => ({ time: x, value: 0, color: st.on[i] ? "#f0a202" : "#5d6475" })), 1);
   }
-  chart.priceScale("ind").applyOptions({ scaleMargins: { top: .69, bottom: .15 } });
+  fitPanes();
+}
+function fitPanes() {                                   // screen split: price 65%, indicator 22%, volume 13% (or a sliver when hidden)
+  const ps = chart.panes(), vol = volume.getPane();
+  ps[0].setStretchFactor(5);
+  ps.forEach(p => { if (p !== ps[0] && p !== vol) p.setStretchFactor(1.7); });
+  vol.setStretchFactor(show.vol ? 1 : .05);
 }
 function h4Marks() {                                    // where the card's state changed: arrow on the bar it is traded at
   const d = closedDays(); if (d.length < 220) return [];
@@ -475,8 +488,8 @@ function h4Marks() {                                    // where the card's stat
   for (let i = 60; i < data.length - 1; i++) {          // skip warm-up; the last bar is still forming
     if (data[i].time - TZ + 4 * 3600 > now) break;
     const c = byDay.get(Math.floor((data[i].time - TZ) / 86400) * 86400 - 86400), p = c === undefined || c < 0 ? 0 : sts[PICKS[c]][i];
-    if (prev !== null && p !== prev) ms.push({ time: data[i + 1].time, position: p > 0 ? "belowBar" : "aboveBar", color: p > 0 ? "#26a69a" : p < 0 ? "#ef5350" : "#8a90a0",
-      shape: p > 0 ? "arrowUp" : p < 0 ? "arrowDown" : "circle", text: p > 0 ? "롱" : p < 0 ? "숏" : "청산" });
+    if (prev !== null && p !== prev) ms.push({ time: data[i + 1].time, position: p > 0 || prev < 0 ? "belowBar" : "aboveBar", color: p > 0 ? "#26a69a" : p < 0 ? "#ef5350" : "#8a90a0",
+      shape: p > 0 ? "arrowUp" : p < 0 ? "arrowDown" : "circle", text: p > 0 ? "롱" : p < 0 ? "숏" : prev > 0 ? "롱 끝" : "숏 끝" });
     prev = p;
   }
   return ms;
@@ -502,7 +515,7 @@ function check(now, live) {
   const min = Math.max(MIN_NOTIONAL[sym] ?? 5, (MIN_QTY[sym] ?? 0) * live), qty = Math.max(notional, min) / live;
   const word = s > 0 ? "롱" : s < 0 ? "숏" : "현금";
   $("ckDir").innerHTML = `<div class="verdict" style="color:${s > 0 ? G : s < 0 ? R : D}">${word}</div>`
-    + `<div class="lv-foot" style="margin:2px 0 0">${s ? `${fresh ? "방금 바뀜 → 지금 진입" : `${hm(h4[k].time + 4 * 3600)} 마감부터 ${word} (${st.length - 1 - k}봉째)`}` : "포지션 없이 쉬는 구간 · 들고 있으면 청산"}</div>`;
+    + `<div class="lv-foot" style="margin:2px 0 0">${s ? `${fresh ? "방금 바뀜 → 지금 진입" : `${hm(h4[k].time + 4 * 3600)} 마감부터 ${word} (${st.length - 1 - k}봉째)`}` : "포지션 없이 쉬는 구간 · 들고 있으면 정리하고 쉬기"}</div>`;
   const row = (nm, vl, cls = "mid") => `<div class="cr ${cls}"><span class="ic">${cls === "no" ? "!" : "·"}</span><span>${nm}</span><span class="vl">${vl}</span></div>`;
   $("ckCrit").innerHTML = `<div class="crit">`
     + row("장세", `${REG_NAME[rg.code]} · 200일선 ${sgn(rg.above)} · ADX ${rg.adx.toFixed(0)}`)
@@ -514,7 +527,7 @@ function check(now, live) {
   $("ckOrder").innerHTML = s ? `<span>시장가 ${word}<b>${qty.toPrecision(3)} ${coin}</b></span><span>주문<b>${(qty * live).toFixed(1)} USDT</b></span>` : "";
   $("ckLadder").innerHTML = `<div class="crit">`
     + (s ? row("신호 시작가", `${fmt(startPx)} → 지금 ${fmt(live)} (${sgn(s * pct(live, startPx))})`)
-         + row("청산", `4시간 마감에 이 칸이 ${word}이 아니게 되면 전량 시장가`) : "")
+         + row("나올 때", `4시간 마감에 이 칸이 ${word}이 아니게 되면 전량 시장가로 정리`) : "")
     + row("다음 확인", `${hm(nextClose)} (한국 1·5·9·13·17·21시 마감)`)
     + `</div>`;
 }
@@ -576,7 +589,7 @@ function showMarks() {
   const key = show.marks + shown.join("");
   if (key === markKey) return;
   markKey = key;
-  series.setMarkers(show.marks ? allMarks.map((m, k) => shown[k] ? m : { ...m, text: "" }) : []);
+  marksApi.setMarkers(show.marks ? allMarks.map((m, k) => shown[k] ? m : { ...m, text: "" }) : []);
 }
 
 // ---- volume profile ----
@@ -657,9 +670,11 @@ function draw(panels = true) {
   const cv = $("overlay"), W = $("chartWrap").clientWidth, H = $("chartWrap").clientHeight, dpr = window.devicePixelRatio || 1;
   if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
   const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const PH = chart.panes()[0].getHeight();              // price pane: zones, labels and drawings stay inside it
   const nb = $("bins").value === "auto" ? 100 : +$("bins").value;   // fixed, so zones don't shift with window size
   const bars = profileBars();
   if (bars.length < 3) return;
+  g.save(); g.beginPath(); g.rect(0, 0, W, PH); g.clip();
   const key = $("pr").value === "visible" ? null : `${$("pr").value}|${nb}|${hist.length}|${$("hl").value}`;
   if (!key || key !== profKey) { prof = profile(bars, nb); profKey = key; }
   const p = nowPrice(), near = nearest(p);
@@ -668,7 +683,7 @@ function draw(panels = true) {
   const labels = [], lineLabels = [];
   // nearest zones / bot line that are off-screen get an edge tag with their distance
   const edge = { top: [], bottom: [] };
-  const tag = (v, text, color) => { const yy = y(v); if (yy === null) return; if (yy < 8) edge.top.push({ text, color }); else if (yy > H - 30) edge.bottom.push({ text, color }); };
+  const tag = (v, text, color) => { const yy = y(v); if (yy === null) return; if (yy < 8) edge.top.push({ text, color }); else if (yy > PH - 2) edge.bottom.push({ text, color }); };
   const hline = (v, color, dash, w) => { const yy = y(v); if (yy === null) return;
     g.setLineDash(dash); g.strokeStyle = color; g.lineWidth = w; g.beginPath(); g.moveTo(0, yy); g.lineTo(paneW, yy); g.stroke(); g.setLineDash([]); };
   for (const z of prof.zones) {
@@ -710,7 +725,7 @@ function draw(panels = true) {
   if (show.zones && /^\d+$/.test($("pr").value) && bars.length) {
     const first = data.find(b => b.time >= bars[0].time), x = first && data[0].time < bars[0].time ? chart.timeScale().timeToCoordinate(first.time) : null;
     if (x !== null && x > 0 && x < paneW) {
-      g.strokeStyle = "#8a90a0"; g.lineWidth = 1; g.setLineDash([6, 5]); g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H - 28); g.stroke(); g.setLineDash([]);
+      g.strokeStyle = "#8a90a0"; g.lineWidth = 1; g.setLineDash([6, 5]); g.beginPath(); g.moveTo(x, 0); g.lineTo(x, PH); g.stroke(); g.setLineDash([]);
       const t = `매물대 계산 시작 (${$("pr").selectedOptions[0].text}) ▶`, w = (g.font = "11px -apple-system, sans-serif", g.measureText(t).width);
       g.fillStyle = "rgba(19,23,34,.9)"; g.fillRect(x + 4, 6, w + 10, 18); g.fillStyle = "#c9ccd4"; g.fillText(t, x + 9, 19);
     }
@@ -720,36 +735,37 @@ function draw(panels = true) {
   const vr = chart.timeScale().getVisibleLogicalRange(), zoom = vr ? paneW / Math.max(1, vr.to - vr.from) / 8 : 1;
   const fs = Math.round(12 * Math.min(1.15, Math.max(.75, zoom)));
   const place = (list, font, xOf) => { g.font = font;
-    list.filter(l => l.y !== null && l.y > 8 && l.y < H - 30).sort((a, b) => a.y - b.y)
+    list.filter(l => l.y !== null && l.y > 8 && l.y < PH - 2).sort((a, b) => a.y - b.y)
       .reduce((lastY, l) => { const yy = Math.max(l.y, lastY + fs * 1.5), w = g.measureText(l.text).width, x = xOf(w);
         g.fillStyle = "rgba(19,23,34,.6)"; g.fillRect(x - 4, yy - fs * .83, w + 8, fs * 1.58);
         g.fillStyle = l.color || "#f0a202"; g.fillText(l.text, x, yy + fs * .33); return yy; }, -100); };
   place(labels, `bold ${fs}px -apple-system, sans-serif`, w => paneW - barMax - 12 - w);
   place(lineLabels, `${Math.max(9, fs - 1)}px -apple-system, sans-serif`, () => 50);
-  if (show.draw) drawShapes(g, y, paneW, H);
+  if (show.draw) drawShapes(g, y, paneW, PH + 28);
   g.font = `bold ${fs}px -apple-system, sans-serif`;
   for (const [pos, list] of Object.entries(edge)) list.forEach((t, i) => {
-    const w = g.measureText(t.text).width, x = paneW - barMax - 12 - w, yy = pos === "top" ? 16 + i * fs * 1.75 : H - 46 - i * fs * 1.75;
+    const w = g.measureText(t.text).width, x = paneW - barMax - 12 - w, yy = pos === "top" ? 16 + i * fs * 1.75 : PH - 18 - i * fs * 1.75;
     g.fillStyle = "rgba(19,23,34,.85)"; g.fillRect(x - 6, yy - fs * .92, w + 12, fs * 1.67);
     g.strokeStyle = t.color; g.lineWidth = 1; g.setLineDash([]); g.strokeRect(x - 6, yy - 11, w + 12, 20);
     g.fillStyle = t.color; g.fillText(t.text, x, yy + fs * .33); });
+  g.restore();
   if (panels) signal();
 }
 
 function initChart() {
   if (chart) chart.remove();
-  allMarks = []; markKey = null;
+  allMarks = []; markKey = null; indS = [];
   chart = LightweightCharts.createChart($("chart"), {
     autoSize: true,
-    layout: { background: { color: "#131722" }, textColor: "#d1d4dc", fontSize: 12 },
     grid: { vertLines: { color: "#1c2130" }, horzLines: { color: "#1c2130" } },
-    rightPriceScale: { borderColor: "#2a3042", scaleMargins: { top: .06, bottom: .15 }, mode: +$("scale").value },
+    rightPriceScale: { borderColor: "#2a3042", scaleMargins: { top: .06, bottom: .05 }, mode: +$("scale").value },
+    layout: { background: { color: "#131722" }, textColor: "#d1d4dc", fontSize: 12, panes: { separatorColor: "#2a3042", separatorHoverColor: "rgba(41,98,255,.25)" } },
     timeScale: { borderColor: "#2a3042", timeVisible: /[mh]$/.test($("iv").value), rightOffset: 6, barSpacing: 8 },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     localization: { priceFormatter: v => { const a = Math.abs(v), d = a >= 1000 ? 0 : a >= 10 ? 2 : a >= .1 ? 4 : 6;
       return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); } },
   });
-  series = chart.addCandlestickSeries({
+  series = chart.addSeries(LightweightCharts.CandlestickSeries, {
     upColor: "#26a69a", downColor: "#ef5350", borderVisible: false, wickUpColor: "#26a69a", wickDownColor: "#ef5350", priceLineColor: "#2962ff",
     // keep the nearest resistance and support zone on screen (within ±40%) so targets are always visible
     autoscaleInfoProvider: orig => {
@@ -765,16 +781,17 @@ function initChart() {
     },
   });
   const maOpt = { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: () => null };
-  ma50 = chart.addLineSeries({ ...maOpt, color: "#f7c948" });
-  ma200 = chart.addLineSeries({ ...maOpt, color: "#ce93d8", lineWidth: 2 });
+  marksApi = LightweightCharts.createSeriesMarkers(series, []);
+  ma50 = chart.addSeries(LightweightCharts.LineSeries, { ...maOpt, color: "#f7c948" });
+  ma200 = chart.addSeries(LightweightCharts.LineSeries, { ...maOpt, color: "#ce93d8", lineWidth: 2 });
   // volume bars in the bottom 13% (the candle scale leaves that strip free)
-  volume = chart.addHistogramSeries({ priceScaleId: "vol", priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false });
-  chart.priceScale("vol").applyOptions({ scaleMargins: { top: .87, bottom: 0 } });
+  volume = chart.addSeries(LightweightCharts.HistogramSeries, { priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false }, 1);
+  fitPanes();
   chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
   chart.subscribeCrosshairMove(prm => { hoverBar = (prm.time !== undefined && prm.seriesData.get(series)) || null; showOHLC(); dirty = true; });
 }
 
-let volume = null;
+let volume = null, marksApi = null;
 const volBar = b => ({ time: b.time, value: b.q, color: b.close >= b.open ? "rgba(38,166,154,.45)" : "rgba(239,83,80,.45)" });
 function setAll() { series.setData(data); volume.setData(data.map(volBar)); markers(); updateMAs(); applyLayers(); }
 
@@ -820,7 +837,7 @@ async function start() {
     setAll();
     const n = { "1d": 180, "1w": 150 }[$("iv").value] || 200;
     chart.timeScale().setVisibleLogicalRange({ from: data.length - n, to: data.length + 5 });
-  } catch (e) { $("upd").textContent = "데이터 오류: " + e.message; return; }
+  } catch (e) { $("upd").textContent = "데이터 오류: " + e.message; console.error(e); return; }
   connect(); loadH4();
 }
 
