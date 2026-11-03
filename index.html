@@ -111,6 +111,8 @@
     <div class="inputs">
       <label class="field"><span>진입가</span><div class="in"><input id="entry" type="number" min="0" step="any" placeholder="지금 가격"><button id="entryNow" type="button">지금가</button></div></label>
       <label class="field"><span>지갑 USDT</span><input id="acct" type="number" min="1" step="any"></label>
+      <label class="field"><span>손절 시 잃을 % (최대 5)</span><input id="risk" type="number" min="0.1" max="5" step="0.5"></label>
+      <label class="field"><span>레버리지</span><input id="lev" type="number" min="1" max="125" step="1"></label>
     </div>
     <div class="order" id="ckOrder"></div>
     <div class="rule"></div>
@@ -367,8 +369,10 @@ function check(now, live) {
   // a typed entry keeps the ATR from the moment it was typed, so its stop / take-profits stay put as new days come in
   const typed = +$("entry").value > 0, ent = typed ? +$("entry").value : live, oneR = 2 * (typed && entryAtr || a);
   const stop = ent - d * oneR, stopPct = oneR / ent, be = ent + d * oneR;
-  // order = 10% of the futures wallet (user's rule); Binance regular fees: maker 0.02% (limit take-profits), taker 0.05%
-  const acct = +$("acct").value || 0, notional = acct * .1, FEE_M = .0002, FEE_T = .0005;
+  // order sized so the stop (plus taker fees in and out) loses the chosen % of the wallet, capped by the leverage (swing_200.py)
+  // Binance regular fees: maker 0.02% (limit take-profits), taker 0.05%
+  const acct = +$("acct").value || 0, riskPct = Math.min(+$("risk").value || 0, 5) / 100, lev = Math.max(+$("lev").value || 1, 1), FEE_M = .0002, FEE_T = .0005;
+  const notional = Math.min(acct * riskPct / (stopPct + 2 * FEE_T), acct * lev);
   const min = Math.max(MIN_NOTIONAL[$("sym").value] ?? 5, (MIN_QTY[$("sym").value] ?? 0) * ent);
   const size = Math.max(notional, min), qty = size / ent;           // below Binance's minimum the order goes in at the minimum
   const entryFee = size * FEE_T, stopFee = size * (1 - d * stopPct) * FEE_T;
@@ -376,6 +380,8 @@ function check(now, live) {
   const lossAll = size * stopPct + entryFee + stopFee, risk = lossAll / Math.max(acct, 1e-9);
   // cross margin: the whole wallet backs the position (rough: ignores other positions and maintenance tiers)
   const liqX = ent - d * (acct - .005 * size) / Math.max(qty, 1e-12), liqBad = d > 0 ? liqX > 0 && liqX >= stop : liqX <= stop;
+  // isolated margin = only size/lev backs it: liquidated after a move of about 1/lev minus maintenance
+  const liqIso = ent * (1 - d * (1 / lev - .005)), isoBad = d > 0 ? liqIso >= stop : liqIso <= stop;
   if (dir || force) plan = { dir: d, stop, be, preview };
   // take-profits (tp3.py): 40% at +1.5R pays for the rest if it gets stopped, 30% at +3R, 20% at +5R, last 10% rides the trend
   // a slice smaller than Binance's minimum quantity can't be placed and stays with the runner (BTC 0.001 can't be split)
@@ -392,7 +398,8 @@ function check(now, live) {
     { k: "entry done", px: ent, nm: typed ? "진입" : "진입 (지금가)", sub: typed ? `지금 ${fmt(live)}` : "", pl: typed ? usd(d * (live - ent) * qty - entryFee - qty * live * FEE_T) : "", now: typed },
     { k: "stop loss", px: stop, nm: "손절", sub: `지갑의 ${(risk * 100).toFixed(2)}%`, pl: usd(-lossAll) },
   ].sort((x, y) => y.px - x.px);
-  $("ckOrder").innerHTML = `<span>주문<b>${size.toFixed(1)} USDT</b>${size > notional ? " 최소 주문" : ""}</span><span>수량<b>${qty.toPrecision(3)} ${coin}</b></span>`;
+  $("ckOrder").innerHTML = `<span>주문<b>${size.toFixed(1)} USDT</b>${size > notional ? " 최소 주문" : ""}</span><span>수량<b>${qty.toPrecision(3)} ${coin}</b></span>`
+    + `<span>증거금<b>${(size / lev).toFixed(1)}</b></span>`;
   $("ckLadder").innerHTML = (preview ? `<div class="lv-note">${d > 0 ? "롱" : "숏"}으로 들어간다면</div>` : "")
     + `<div class="lv-h"><span></span><span>가격</span><span>손익 USDT</span></div><div>${rows.map(r => `<div class="lv ${r.k}"><i></i><div class="nm">${r.nm}${r.sub ? `<small>${r.sub}</small>` : ""}</div>`
       + `<div class="px">${fmt(r.px)}<small>${r.now ? sgn(d * pct(live, ent)) : r.k.startsWith("entry") ? "" : move(r.px)}</small></div>`
@@ -407,11 +414,13 @@ function check(now, live) {
   const rules = [
     [L ? v >= FUT.long : v <= FUT.short, `${coin} 추세`, `${dots(now.lights)} ${v}/6`],
     ...(coin !== "BTC" ? [[vb !== null && (L ? vb >= FUT.btcLong : vb <= FUT.btcShort), "BTC 추세", btc ? `${dots(btc.lights)} ${vb}/6` : "-"]] : []),
-    [+(risk * 100).toFixed(2) <= 1, "손절 손실 1% 이하", `지갑의 ${(risk * 100).toFixed(2)}%`],
+    [risk <= riskPct + 5e-5, `손절 손실 ${+(riskPct * 100).toFixed(2)}% 이하`, `지갑의 ${(risk * 100).toFixed(2)}%`],
     [tps.every(t => t.ok), "익절 3번 나눠짐", tps.every(t => t.ok) ? "가능" : "수량이 최소 단위 미만"],
-    [!liqBad, "청산가가 손절 뒤", liqBad ? fmt(liqX) : (L && liqX <= 0) ? "청산 없음" : fmt(liqX)],
+    [!liqBad, "교차 마진 청산가가 손절 뒤", liqBad ? fmt(liqX) : (L && liqX <= 0) ? "청산 없음" : fmt(liqX)],
   ];
+  const refs0 = [[!isoBad, `격리 ${lev}배 청산가`, isoBad ? `${fmt(liqIso)} 손절 전 청산 → 교차로` : fmt(liqIso)]];
   const refs = [
+    ...refs0,
     [bma === null ? null : (bLast > bma) === L, "장세 (BTC 200일선)", bma === null ? "-" : bLast > bma ? "상승장" : "하락장"],
     [ma50 === null ? null : (live > ma50) === L, "50일선", ma50 === null ? "-" : `${live > ma50 ? "위" : "아래"} ${sgn(pct(live, ma50))}`],
     [fr === null ? null : !hot, "펀딩 과열 아님", fr === null ? "-" : `${(fr * 100).toFixed(4)}% · 8시간 ${(fr >= 0) === L ? "−" : "+"}${(Math.abs(fr) * size).toFixed(4)}`],
@@ -736,7 +745,7 @@ const setDetail = on => { document.body.classList.toggle("detail", on); $("detai
   try { localStorage.setItem("checkPanel", on ? "1" : "0"); } catch {} };
 $("detailBtn").addEventListener("click", () => setDetail(!document.body.classList.contains("detail")));
 try { setDetail(localStorage.getItem("checkPanel") !== "0"); } catch { setDetail(true); }
-for (const [id, def] of [["acct", 367]]) {
+for (const [id, def] of [["acct", 200], ["risk", 3], ["lev", 30]]) {
   try { $(id).value = localStorage.getItem(id) ?? def; } catch { $(id).value = def; }
   for (const ev of ["input", "change"]) $(id).addEventListener(ev, () => { try { localStorage.setItem(id, $(id).value); } catch {} dirty = true; });
 }
