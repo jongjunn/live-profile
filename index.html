@@ -69,7 +69,7 @@
 <body>
 <header>
   <select id="sym"><option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option></select>
-  <label>봉 <select id="iv"><option value="4h" selected>4시간</option><option value="1d">1일</option></select></label>
+  <label>봉 <select id="iv"><option value="1h">1시간</option><option value="4h" selected>4시간</option><option value="1d">1일</option></select></label>
   <label>가격축 <select id="scale"><option value="0" selected>일반</option><option value="1">로그</option></select></label>
   <span class="dim"><span id="dot"></span><span id="upd">연결 중…</span></span>
   <button id="fitBtn" title="세로 범위를 캔들에 다시 맞춤">맞춤</button>
@@ -347,12 +347,19 @@ function applyLayers() {                                // chart series; the can
 applyLayers();
 $("layers").addEventListener("click", e => { const k = e.target.dataset && e.target.dataset.k; if (!k) return;
   show[k] = !show[k]; try { localStorage.setItem("layers", JSON.stringify(show)); } catch {} applyLayers(); });
+const src4h = () => $("iv").value === "4h" ? data : h4;
+const open4h = t => t - ((t - TZ) % 14400);             // the 4h bar a chart bar belongs to (bar times are local-shifted)
 let indS = [];
 function drawInd() {
   indS.forEach(x => chart.removeSeries(x)); indS = [];      // an emptied pane is removed by the chart library
-  if ($("iv").value !== "4h" || !data.length || !show.ind) return fitPanes();
+  const src = src4h();
+  if ($("iv").value === "1d" || !data.length || src.length < 100 || !show.ind) return fitPanes();
   const rg = regimeNow(); if (!rg || rg.code < 0) return fitPanes();
-  const name = PICKS[rg.code], st = IND[name](data), t = data.map(b => b.time), ok = Number.isFinite;
+  const name = PICKS[rg.code], st0 = IND[name](src), ok = Number.isFinite;
+  // spread the 4h values over the chart's bars (1:1 on 4h, each 4h value over its four 1h bars on 1h)
+  const pos = new Map(src.map((b, j) => [b.time, j])), at = data.map(b => pos.get(open4h(b.time)) ?? -1);
+  const pick = arr => at.map(j => j < 0 ? NaN : arr[j]), st = Object.assign(pick(st0), Object.fromEntries(["fu", "fl", "m", "sg", "mom", "on"].filter(k => st0[k]).map(k => [k, pick(st0[k])])));
+  const t = data.map(b => b.time);
   const add = (type, opt, pts, pane) => { const x = chart.addSeries(LightweightCharts[type], { priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...opt }, pane);
     x.setData(pts); indS.push(x); };
   if (name === "SuperTrend") {                          // the active band: below price while long, above while short
@@ -381,14 +388,15 @@ function fitPanes() {                                   // screen split: price 6
   vol.setStretchFactor(show.vol ? 1 : .05);
 }
 function h4Marks() {                                    // where the card's state changed: arrow on the bar it is traded at
-  const d = closedDays(); if (d.length < 220) return [];
+  const d = closedDays(), src = src4h(); if (d.length < 220 || src.length < 100) return [];
   const code = regimes(d).code, byDay = new Map(d.map((b, i) => [b.time - TZ, code[i]]));
-  const sts = {}; for (const n of new Set(Object.values(PICKS).filter(v => IND[v]))) sts[n] = IND[n](data);
-  const now = Date.now() / 1000, ms = []; let prev = null;
-  for (let i = 60; i < data.length - 1; i++) {          // skip warm-up; the last bar is still forming
-    if (data[i].time - TZ + 4 * 3600 > now) break;
-    const c = byDay.get(Math.floor((data[i].time - TZ) / 86400) * 86400 - 86400), p = c === undefined || c < 0 ? 0 : sts[PICKS[c]][i];
-    if (prev !== null && p !== prev) ms.push({ time: data[i + 1].time, position: p > 0 || prev < 0 ? "belowBar" : "aboveBar", color: p > 0 ? "#26a69a" : p < 0 ? "#ef5350" : "#8a90a0",
+  const sts = {}; for (const n of new Set(Object.values(PICKS).filter(v => IND[v]))) sts[n] = IND[n](src);
+  const now = Date.now() / 1000, lastT = data.length ? data[data.length - 1].time : 0, ms = []; let prev = null;
+  for (let i = 60; i < src.length; i++) {               // skip warm-up; only closed 4h bars
+    if (src[i].time - TZ + 4 * 3600 > now) break;
+    const c = byDay.get(Math.floor((src[i].time - TZ) / 86400) * 86400 - 86400), p = c === undefined || c < 0 ? 0 : sts[PICKS[c]][i];
+    const when = src[i].time + 4 * 3600;                // traded at the next 4h open (a 1h bar too)
+    if (prev !== null && p !== prev && when <= lastT) ms.push({ time: when, position: p > 0 || prev < 0 ? "belowBar" : "aboveBar", color: p > 0 ? "#26a69a" : p < 0 ? "#ef5350" : "#8a90a0",
       shape: p > 0 ? "arrowUp" : p < 0 ? "arrowDown" : "circle", text: p > 0 ? "롱" : p < 0 ? "숏" : prev > 0 ? "롱 끝" : "숏 끝" });
     prev = p;
   }
@@ -396,7 +404,8 @@ function h4Marks() {                                    // where the card's stat
 }
 let h4 = [];
 async function loadH4() {                               // closed 4h bars only
-  try { h4 = (await klines("4h")).filter(b => b.time - TZ + 4 * 3600 <= Date.now() / 1000); dirty = true; } catch {}
+  try { h4 = (await klines("4h")).filter(b => b.time - TZ + 4 * 3600 <= Date.now() / 1000); dirty = true; } catch { return; }
+  if ($("iv").value === "1h" && chart) { drawInd(); markers(); }
 }
 setInterval(() => { if (h4.length && Date.now() / 1000 >= h4[h4.length - 1].time - TZ + 8 * 3600 + 10) loadH4(); }, 60000);
 function check(live) {
@@ -419,7 +428,7 @@ function check(live) {
   $("ckCrit").innerHTML = `<div class="crit">`
     + row("장세", `${REG_NAME[rg.code]} · 200일선 ${sgn(rg.above)} · ADX ${rg.adx.toFixed(0)}`)
     + row("이번 분기 지표", `${name} (${PICKS.q})`)
-    + ($("iv").value === "4h" ? row("차트", name === "SuperTrend" ? "캔들 위 선" : "캔들 아래 칸") : row("차트", `<a href="#" id="to4h" style="color:#2962ff">4시간 차트로 지표 보기</a>`))
+    + ($("iv").value !== "1d" ? row("차트", name === "SuperTrend" ? "캔들 위 선" : "캔들 아래 칸") : row("차트", `<a href="#" id="to4h" style="color:#2962ff">4시간 차트로 지표 보기</a>`))
     + (qNow !== PICKS.q ? row("분기 바뀜", "지표 다시 뽑아야 함", "no") : "")
     + (notional < min ? row("최소 주문", `${min.toFixed(0)} USDT > 코인당 ${notional.toFixed(0)} → 최소로 들어감`, "no") : "")
     + `</div>`;
@@ -452,7 +461,7 @@ function dayAt(t) {
 }
 
 function markers() {                                   // the card's long/short arrows (4h chart only)
-  allMarks = $("iv").value === "4h" ? h4Marks() : []; markKey = null; showMarks();
+  allMarks = $("iv").value === "1d" ? [] : h4Marks(); markKey = null; showMarks();
 }
 
 // marker words only where they fit: when zoomed out, crowded markers keep just the arrow (the library draws the words at
