@@ -105,7 +105,7 @@
 <header>
   <select id="sym" title="심볼"><option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option></select>
   <span class="sep"></span>
-  <select id="iv" title="봉"><option value="1h">1h</option><option value="4h" selected>4h</option><option value="1d">D</option></select>
+  <select id="iv" title="봉"></select>
   <select id="scale" hidden><option value="0" selected>일반</option><option value="1">로그</option></select>
   <span class="sep"></span>
   <span class="dim"><span id="dot"></span><span id="upd">연결 중…</span></span>
@@ -170,10 +170,16 @@ const wsUrl = () => "wss://fstream.binance.com/market/ws/" + $("sym").value.toLo
 // q = traded USDT, tb = the part bought at market (taker buy); the rest was sold at market
 // v = traded coins (TradingView's "Vol · BTC")
 const toBar = k => ({ time: k[0] / 1000 + TZ, open: +k[1], high: +k[2], low: +k[3], close: +k[4], v: +k[5], q: +k[7], tb: +k[10] });
-const DEC = { BTCUSDT: 1, ETHUSDT: 2, SOLUSDT: 2 };          // exchange tick size, as TradingView prints prices
-const fmt = v => { const d = Math.abs(v) >= 1 || !v ? DEC[$("sym").value] ?? 2 : 4;
+// exchange tick size, as TradingView prints prices; filled for every coin from exchangeInfo (loadSymbols)
+const DEC = { BTCUSDT: 1, ETHUSDT: 2, SOLUSDT: 2 }, TICK = { BTCUSDT: .1, ETHUSDT: .01, SOLUSDT: .01 };
+const fmt = v => { const t = DEC[$("sym").value], d = Math.abs(v) >= 1 || !v ? t ?? 2 : Math.max(4, t ?? 0);
   return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); };
 const UP = "#089981", DN = "#F23645";
+const pfmt = () => { const s = $("sym").value; return { type: "price", precision: DEC[s] ?? 2, minMove: TICK[s] ?? .01 }; };
+// every Binance kline interval TradingView also offers (minutes); the indicator/arrows need bars of 4h or shorter
+const INTERVALS = [["1m", 1], ["5m", 5], ["15m", 15], ["30m", 30], ["1h", 60], ["2h", 120], ["4h", 240], ["6h", 360], ["12h", 720], ["1d", 1440], ["1w", 10080]];
+const IV_SEC = Object.fromEntries(INTERVALS.map(([v, m]) => [v, m * 60])), ivSec = () => IV_SEC[$("iv").value];
+$("iv").innerHTML = INTERVALS.map(([v]) => `<option value="${v}"${v === "4h" ? " selected" : ""}>${v === "1d" ? "D" : v === "1w" ? "W" : v}</option>`).join("");
 const pct = (a, b) => (a / b - 1) * 100;
 const sgn = v => (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
 const nowPrice = () => livePrice ?? (data.length ? data[data.length - 1].close : null);
@@ -492,7 +498,7 @@ let indS = [];
 function drawInd() {
   indS.forEach(x => chart.removeSeries(x)); indS = [];      // an emptied pane is removed by the chart library
   const src = src4h();
-  if ($("iv").value === "1d" || !data.length || src.length < 100 || !show.ind) return fitPanes();
+  if (ivSec() > 14400 || !data.length || src.length < 100 || !show.ind) return fitPanes();
   const rg = regimeNow(); if (!rg || rg.code < 0) return fitPanes();
   const name = PICKS[rg.code], st0 = IND[name](src), ok = Number.isFinite;
   // spread the 4h values over the chart's bars (1:1 on 4h, each 4h value over its four 1h bars on 1h)
@@ -540,14 +546,15 @@ function h4Marks() {                                    // where the card's stat
 let h4 = [];
 async function loadH4() {                               // closed 4h bars only
   try { h4 = (await klines("4h")).filter(b => b.time - TZ + 4 * 3600 <= Date.now() / 1000); dirty = true; } catch { return; }
-  if ($("iv").value === "1h" && chart) { drawInd(); markers(); }
+  if (ivSec() < 14400 && chart) { drawInd(); markers(); }
 }
 setInterval(() => { if (h4.length && Date.now() / 1000 >= h4[h4.length - 1].time - TZ + 8 * 3600 + 10) loadH4(); }, 60000);
 function check(live) {
   const sym = $("sym").value, coin = sym.replace("USDT", ""), G = "#089981", R = "#F23645", D = "#8a90a0";
   $("ckCoin").textContent = coin;
   const rg = regimeNow();
-  if (!rg || h4.length < 300) { $("ckDir").innerHTML = `<div class="dim">4시간봉 불러오는 중</div>`; ["ckCrit", "ckOrder", "ckLadder"].forEach(id => $(id).innerHTML = ""); return; }
+  const young = hist.length && closedDays().length < 220;
+  if (!rg || h4.length < 300) { $("ckDir").innerHTML = `<div class="dim">${young ? "상장 220일 미만: 200일선 장세 판정이 안 돼 타점 없음" : "4시간봉 불러오는 중"}</div>`; ["ckCrit", "ckOrder", "ckLadder"].forEach(id => $(id).innerHTML = ""); return; }
   const name = PICKS[rg.code], st = IND[name](h4), s = st[st.length - 1];
   let k = st.length - 1;
   while (k > 0 && st[k - 1] === s) k--;                 // bar whose close started the current state
@@ -563,7 +570,8 @@ function check(live) {
   $("ckCrit").innerHTML = `<div class="crit">`
     + row("장세", `${REG_NAME[rg.code]} · 200일선 ${sgn(rg.above)} · ADX ${rg.adx.toFixed(0)}`)
     + row("이번 분기 지표", `${name} (${PICKS.q})`)
-    + ($("iv").value !== "1d" ? row("차트", name === "SuperTrend" ? "캔들 위 선" : "캔들 아래 칸") : row("차트", `<a href="#" id="to4h" style="color:#2962ff">4시간 차트로 지표 보기</a>`))
+    + (ivSec() <= 14400 ? row("차트", name === "SuperTrend" ? "캔들 위 선" : "캔들 아래 칸") : row("차트", `<a href="#" id="to4h" style="color:#2962ff">4시간 차트로 지표 보기</a>`))
+    + (!["BTCUSDT", "ETHUSDT", "SOLUSDT"].includes(sym) ? row("시험 범위", "BTC·ETH·SOL로만 검증된 규칙", "no") : "")
     + (qNow !== PICKS.q ? row("분기 바뀜", "지표 다시 뽑아야 함", "no") : "")
     + (notional < min ? row("최소 주문", `${min.toFixed(0)} USDT > 코인당 ${notional.toFixed(0)} → 최소로 들어감`, "no") : "")
     + `</div>`;
@@ -582,7 +590,7 @@ function updateMAs() {                                 // 200-DAY average (the m
   const c = hist.map(b => b.close), sma = n => c.map((_, i) => i >= n - 1 ? c.slice(i - n + 1, i + 1).reduce((x, y) => x + y, 0) / n : null);
   const s200 = sma(200), iv = $("iv").value, span = data.length > 1 ? data[1].time - data[0].time : 86400;
   // daily/weekly bars: the average at the last day inside the bar; intraday bars: as of the last completed daily close
-  const at = b => dayAt(iv === "1d" ? b.time + span - 86400 : b.time - 86400);
+  const at = b => dayAt(ivSec() >= 86400 ? b.time + span - 86400 : b.time - 86400);
   const line = arr => data.map(b => { const i = at(b); return i >= 0 && arr[i] !== null ? { time: b.time, value: arr[i] } : null; }).filter(Boolean);
   ma200.setData(line(s200));
 }
@@ -596,7 +604,7 @@ function dayAt(t) {
 }
 
 function markers() {                                   // the card's long/short arrows (4h chart only)
-  allMarks = $("iv").value === "1d" ? [] : h4Marks(); markKey = null; showMarks();
+  allMarks = ivSec() > 14400 ? [] : h4Marks(); markKey = null; showMarks();
 }
 
 // marker words only where they fit: when zoomed out, crowded markers keep just the arrow (the library draws the words at
@@ -619,12 +627,15 @@ function showMarks() {
 // price range crosses is removed. Binance serves only 30 days of OI history, so the map covers the last 30 days.
 const LIQ_LEV = [[10, .30], [25, .30], [50, .25], [100, .15]], LIQ_MMR = .004, LIQ_NB = 300;   // ponytail: guessed leverage mix
 let liq = null;
+// model step per chart interval: OI history comes in 5m..1d steps but only for the last 30 days, so short charts get their own
+// step (1000 bars: 5m ≈ 3.5 days, 15m ≈ 10 days, 30m ≈ 21 days) and 1h-and-longer charts all use 1h (the full 30 days, finest)
+const liqPer = () => ({ "1m": "5m", "5m": "5m", "15m": "15m", "30m": "30m" })[$("iv").value] ?? "1h";
 async function loadLiq() {
-  const sym = $("sym").value, get = u => fetch("https://fapi.binance.com" + u).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
-  const oiUrl = end => `/futures/data/openInterestHist?symbol=${sym}&period=1h&limit=500${end ? "&endTime=" + end : ""}`;
-  const [k, oiA] = await Promise.all([get(`/fapi/v1/klines?symbol=${sym}&interval=1h&limit=740`), get(oiUrl())]);
+  const per = liqPer(), step = IV_SEC[per], sym = $("sym").value, get = u => fetch("https://fapi.binance.com" + u).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+  const oiUrl = end => `/futures/data/openInterestHist?symbol=${sym}&period=${per}&limit=500${end ? "&endTime=" + end : ""}`;
+  const [k, oiA] = await Promise.all([get(`/fapi/v1/klines?symbol=${sym}&interval=${per}&limit=1000`), get(oiUrl())]);
   const oiB = oiA.length ? await get(oiUrl(oiA[0].timestamp - 1)).catch(() => []) : [];
-  if (sym !== $("sym").value) return;
+  if (sym !== $("sym").value || per !== liqPer()) return;
   const oiAt = new Map([...oiB, ...oiA].map(o => [o.timestamp, +o.sumOpenInterest]));
   const bars = k.map(b => ({ t: b[0], h: +b[2], l: +b[3], c: +b[4], v: +b[5], tb: +b[9] })).filter(b => oiAt.has(b.t));
   if (bars.length < 24) return;
@@ -655,7 +666,7 @@ async function loadLiq() {
     px.data[o] = c[0] + (d[0] - c[0]) * r; px.data[o + 1] = c[1] + (d[1] - c[1]) * r; px.data[o + 2] = c[2] + (d[2] - c[2]) * r; px.data[o + 3] = 20 + 190 * x;
   }
   g.putImageData(px, 0, 0);
-  liq = { sym, t0: bars[0].t / 1000 + TZ, n, img, L, S, lo, R };
+  liq = { sym, per, step, t0: bars[0].t / 1000 + TZ, n, img, L, S, lo, R };
   dirty = true;
 }
 setInterval(() => loadLiq().catch(() => {}), 300000);
@@ -664,7 +675,7 @@ function drawHeat() {
   if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
   const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
   if (!show.liq || !liq || liq.sym !== $("sym").value) return;
-  const pw = chart.timeScale().width(), ph = chart.panes()[0].getHeight(), x0 = timeToX(liq.t0), x1 = timeToX(liq.t0 + liq.n * 3600);
+  const pw = chart.timeScale().width(), ph = chart.panes()[0].getHeight(), x0 = timeToX(liq.t0), x1 = timeToX(liq.t0 + liq.n * liq.step);
   if (x0 === null || x1 === null) return;
   const y = p => series.priceToCoordinate(p), edge = j => liq.lo * liq.R ** j;
   g.save(); g.beginPath(); g.rect(0, 0, pw, ph); g.clip(); g.imageSmoothingEnabled = false;
@@ -713,7 +724,6 @@ function draw(panels = true) {
   if (panels) { signal(); liqBox();$("clock").textContent = new Date().toLocaleTimeString("en-GB") + ` (UTC${TZ >= 0 ? "+" : "−"}${Math.abs(TZ / 3600)})`; }
 }
 // TradingView's bar-close countdown: a box under the last-price label, same colour
-const IV_SEC = { "1h": 3600, "4h": 14400, "1d": 86400 };
 function drawCountdown(g, W) {
   const last = data[data.length - 1], y = series.priceToCoordinate(last.close), x = chart.timeScale().width();
   if (y === null || y < 0 || y > chart.panes()[0].getHeight()) return;
@@ -744,7 +754,7 @@ function initChart() {
       timeFormatter: t => { const d = new Date(t * 1000), s = `${DAY[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]} '${String(d.getUTCFullYear()).slice(2)}`;
         return intra ? s + "   " + d.toISOString().slice(11, 16) : s; } },   // bar times are already shifted to local time
   });
-  series = chart.addSeries(LightweightCharts.CandlestickSeries, {
+  series = chart.addSeries(LightweightCharts.CandlestickSeries, { priceFormat: pfmt(),
     upColor: UP, downColor: DN, borderUpColor: UP, borderDownColor: DN, wickUpColor: UP, wickDownColor: DN, priceLineStyle: L.Dotted,
   });
   const maOpt = { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: () => null };
@@ -806,7 +816,7 @@ async function start() {
     chart.timeScale().setVisibleLogicalRange({ from: data.length - n, to: data.length + 5 });
   } catch (e) { $("upd").textContent = "데이터 오류: " + e.message; console.error(e); return; }
   connect(); loadH4();
-  if (!liq || liq.sym !== $("sym").value) loadLiq().catch(e => console.warn("청산지도", e));
+  if (!liq || liq.sym !== $("sym").value || liq.per !== liqPer()) loadLiq().catch(e => console.warn("청산지도", e));
 }
 
 ["sym", "iv"].forEach(id => $(id).addEventListener("change", start));
@@ -834,7 +844,7 @@ setInterval(() => dirty = true, 500);
 $("logBtn").addEventListener("click", () => { $("scale").value = $("scale").value === "1" ? "0" : "1"; $("scale").dispatchEvent(new Event("change")); });
 // TradingView's date-range buttons: switch to that range's interval (nearest of ours), then show that much time up to the last bar
 const RANGES = [["5D", 5], ["1M", 30], ["3M", 91], ["6M", 182], ["YTD", "ytd"], ["1Y", 365], ["5Y", 1826], ["All", 0]];
-const RANGE_IV = { "5D": "1h", "1M": "1h", "3M": "1h", "6M": "4h", "YTD": "1d", "1Y": "1d", "5Y": "1d", All: "1d" };   // TV: 5m 30m 1h 2h 1D 1D 1W 1M
+const RANGE_IV = { "5D": "5m", "1M": "30m", "3M": "1h", "6M": "2h", "YTD": "1d", "1Y": "1d", "5Y": "1w", All: "1w" };   // TV: 5m 30m 1h 2h 1D 1D 1W 1M (no 1M bars here)
 $("ranges").innerHTML = RANGES.map(([n]) => `<button data-r="${n}">${n}</button>`).join("");
 $("ranges").addEventListener("click", async e => {
   const n = e.target.dataset.r, d = new Map(RANGES).get(n); if (d === undefined) return;
@@ -931,16 +941,18 @@ $("keepBtn").addEventListener("click", () => { keepDraw = !keepDraw; dirty = tru
 $("eyeBtn").addEventListener("click", toggleDraw);
 $("clearDraw").addEventListener("click", clearAll);
 // type on the chart: digits open "Change interval", letters open symbol search; Enter applies (TradingView's keyboard flow)
-const IVS = [[/^(1h|60)$/, "1h", "1 hour"], [/^(4h|240)$/, "4h", "4 hours"], [/^(1d|d)$/, "1d", "1 day"]];
-const SYMS = [["BTCUSDT", "Bitcoin"], ["ETHUSDT", "Ethereum"], ["SOLUSDT", "Solana"]];
+const IVS = INTERVALS.map(([v, m]) => [new RegExp(`^(${v}|${m}${m === 1440 ? "|d" : m === 10080 ? "|w" : ""})$`), v,
+  m < 60 ? `${m} minute${m > 1 ? "s" : ""}` : m < 1440 ? `${m / 60} hour${m > 60 ? "s" : ""}` : m === 1440 ? "1 day" : "1 week"]);
+let SYMS = [["BTCUSDT", "Bitcoin"], ["ETHUSDT", "Ethereum"], ["SOLUSDT", "Solana"]];   // replaced by every perpetual in loadSymbols
 const setSel = (id, v) => { if ($(id).value !== v) { $(id).value = v; $(id).dispatchEvent(new Event("change")); } };
 function kbdMatch() {
   const v = $("kbdIn").value.trim().toLowerCase();
-  return $("kbd").dataset.mode === "iv" ? IVS.filter(([r]) => r.test(v)) : SYMS.filter(([s]) => s.toLowerCase().startsWith(v));
+  return $("kbd").dataset.mode === "iv" ? IVS.filter(([r]) => r.test(v))
+    : (m => m.filter(([s]) => s.toLowerCase().startsWith(v)).concat(m.filter(([s]) => !s.toLowerCase().startsWith(v))))(SYMS.filter(([s]) => s.toLowerCase().includes(v))).slice(0, 30);
 }
 function kbdHint() {
   const iv = $("kbd").dataset.mode === "iv", m = kbdMatch();
-  $("kbd").querySelector(".kh").textContent = iv ? (m.length ? m[0][2] : "1h · 4h · 1D 만 있음") : m.length ? "" : "BTC · ETH · SOL 만 있음";
+  $("kbd").querySelector(".kh").textContent = iv ? (m.length ? m[0][2] : "없는 봉 (1m 5m 15m 30m 1h 2h 4h 6h 12h D W)") : m.length ? "" : "바이낸스 USDT 무기한에 없는 코인";
   $("kbd").querySelector(".kl").innerHTML = iv ? "" : m.map(([s, n], i) => `<div data-i="${i}">${s}.P<span>${n} 무기한 · Binance</span></div>`).join("");
 }
 function kbdApply(i = 0) {
@@ -979,6 +991,27 @@ document.addEventListener("keydown", e => {
 });
 setInterval(() => loadDaily(false).then(() => { markers(); updateMAs(); }).catch(() => {}), 60000);
 // the view lives in the URL (?sym=SOLUSDT&iv=4h ...) so a link reopens exactly this chart
+// every Binance USDⓈ-M USDT perpetual, biggest 24h volume first; tick size and minimum order from the exchange's own filters
+async function loadSymbols() {
+  const [info, tk] = await Promise.all(["exchangeInfo", "ticker/24hr"].map(p => fetch("https://fapi.binance.com/fapi/v1/" + p).then(r => r.json())));
+  const vol = new Map(tk.map(t => [t.symbol, +t.quoteVolume]));
+  const list = info.symbols.filter(s => s.contractType === "PERPETUAL" && s.quoteAsset === "USDT" && s.status === "TRADING")
+    .sort((a, b) => (vol.get(b.symbol) || 0) - (vol.get(a.symbol) || 0));
+  for (const s of list) {
+    const f = Object.fromEntries(s.filters.map(x => [x.filterType, x])), t = +f.PRICE_FILTER.tickSize;
+    TICK[s.symbol] = t; DEC[s.symbol] = Math.max(0, Math.round(-Math.log10(t)));
+    MIN_NOTIONAL[s.symbol] = +(f.MIN_NOTIONAL?.notional ?? 5); MIN_QTY[s.symbol] = +((f.MARKET_LOT_SIZE ?? f.LOT_SIZE).minQty);
+  }
+  SYMS = list.map(s => [s.symbol, NAMES[s.baseAsset] ?? s.baseAsset]);
+  const cur = $("sym").value;
+  $("sym").innerHTML = (list.some(s => s.symbol === cur) ? "" : `<option>${cur}</option>`) + list.map(s => `<option>${s.symbol}</option>`).join("");
+  $("sym").value = cur;
+  if (series) series.applyOptions({ priceFormat: pfmt() });
+  dirty = true;
+}
+const urlSym = new URLSearchParams(location.search).get("sym");   // a coin outside the first three: add it before the URL is applied
+if (urlSym && /^[A-Z0-9]{2,30}$/.test(urlSym) && ![...$("sym").options].some(o => o.value === urlSym)) $("sym").insertAdjacentHTML("beforeend", `<option>${urlSym}</option>`);
+loadSymbols().catch(e => console.warn("코인 목록", e));
 const VIEW = ["sym", "iv", "scale"];
 new URLSearchParams(location.search).forEach((v, k) => { if (VIEW.includes(k) && [...$(k).options].some(o => o.value === v)) $(k).value = v; });
 const saveView = () => history.replaceState(null, "", "?" + new URLSearchParams(VIEW.map(k => [k, $(k).value])));
