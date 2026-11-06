@@ -43,6 +43,21 @@
   #bottom button { background:transparent; border:0; border-radius:4px; color:var(--tx2); padding:4px 7px; font-size:13px; }
   #bottom button.on { color:var(--acc); }
   #clock { margin-left:auto; padding:0 8px; font-size:13px; color:var(--tx2); font-variant-numeric:tabular-nums; }
+  #chartWrap[data-cur="pointer"] #chart canvas { cursor:pointer !important; } #chartWrap[data-cur="move"] #chart canvas { cursor:move !important; }
+  #chartWrap[data-cur="crosshair"] #chart canvas { cursor:crosshair !important; }
+  #toRT { position:absolute; z-index:12; width:26px; height:26px; padding:0; border:0; border-radius:50%; background:#2e2e2e; color:var(--text); font-size:15px; line-height:26px; }
+  #toRT:hover { background:#3d3d3d; }
+  /* TradingView's type-to-change box (digits = interval, letters = symbol) and right-click menu */
+  #kbd { position:absolute; left:50%; top:40%; transform:translate(-50%,-50%); z-index:30; width:300px; background:#1e1e1e; border-radius:8px;
+         padding:18px 24px 14px; box-shadow:0 2px 24px rgba(0,0,0,.7); text-align:center; }
+  #kbd .kt { font-size:16px; font-weight:600; margin-bottom:14px; } #kbd .kh { font-size:12px; color:var(--dim); margin-top:8px; min-height:15px; }
+  #kbd input { width:100%; background:#000; border:1px solid var(--acc); border-radius:6px; color:var(--text); font:16px -apple-system, BlinkMacSystemFont, sans-serif;
+               text-align:center; padding:8px; outline:none; text-transform:uppercase; }
+  #kbd .kl div { display:flex; justify-content:space-between; padding:7px 10px; border-radius:4px; cursor:pointer; text-align:left; font-size:14px; }
+  #kbd .kl div:first-child, #kbd .kl div:hover { background:#2e2e2e; } #kbd .kl span { color:var(--dim); font-size:12px; }
+  #menu { position:fixed; z-index:50; min-width:210px; background:#1e1e1e; border-radius:6px; padding:6px 0; box-shadow:0 2px 16px rgba(0,0,0,.7); font-size:14px; }
+  #menu div { display:flex; justify-content:space-between; gap:24px; padding:7px 16px; cursor:pointer; } #menu div:hover { background:#2e2e2e; }
+  #menu kbd { font:12px -apple-system, sans-serif; color:var(--dim); }
   /* trade ticket: one column, no boxes; the price ladder is the one strong element */
   aside { width:320px; flex-shrink:0; background:var(--bg); padding:14px 16px 12px; overflow:auto; }
   .tk-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
@@ -99,16 +114,23 @@
 <main>
   <div id="tools">
     <button data-tool="" class="on" title="십자선 (Esc)"><svg viewBox="0 0 28 28"><path d="M14 5v7M14 16v7M5 14h7M16 14h7"/></svg></button>
-    <button data-tool="h" title="수평선: 한 번 클릭"><svg viewBox="0 0 28 28"><path d="M4 14h20"/><circle cx="14" cy="14" r="2"/></svg></button>
-    <button data-tool="line" title="추세선: 시작점 클릭 → 끝점 클릭"><svg viewBox="0 0 28 28"><path d="M7.5 20.5l13-13"/><circle cx="6" cy="22" r="2"/><circle cx="22" cy="6" r="2"/></svg></button>
-    <button data-tool="rect" title="박스: 한쪽 모서리 클릭 → 반대쪽 모서리 클릭"><svg viewBox="0 0 28 28"><rect x="6" y="8" width="16" height="12"/></svg></button>
-    <button data-tool="fib" title="피보나치 되돌림: 시작점 클릭 → 끝점 클릭"><svg viewBox="0 0 28 28"><path d="M5 6h18M5 11h18M5 16h18M5 22h18"/></svg></button>
+    <button data-tool="line" title="추세선 (⌥T) · Shift = 45° 고정"><svg viewBox="0 0 28 28"><path d="M7.5 20.5l13-13"/><circle cx="6" cy="22" r="2"/><circle cx="22" cy="6" r="2"/></svg></button>
+    <button data-tool="h" title="수평선 (⌥H = 마우스 위치에 바로)"><svg viewBox="0 0 28 28"><path d="M4 14h20"/><circle cx="14" cy="14" r="2"/></svg></button>
+    <button data-tool="v" title="수직선 (⌥V)"><svg viewBox="0 0 28 28"><path d="M14 4v20"/><circle cx="14" cy="14" r="2"/></svg></button>
+    <button data-tool="rect" title="박스 (⌥⇧R)"><svg viewBox="0 0 28 28"><rect x="6" y="8" width="16" height="12"/></svg></button>
+    <button data-tool="fib" title="피보나치 되돌림 (⌥F)"><svg viewBox="0 0 28 28"><path d="M5 6h18M5 11h18M5 16h18M5 22h18"/></svg></button>
     <span class="sep"></span>
-    <button data-tool="del" title="지우개: 그린 것을 클릭하면 삭제"><svg viewBox="0 0 28 28"><path d="M11 22h12M8 19l9.5-9.5 5 5L17 20H9z"/></svg></button>
+    <button data-tool="measure" title="측정: Shift + 클릭"><svg viewBox="0 0 28 28"><path d="M4.5 18.5l14-14 5 5-14 14z"/><path d="M9 14l2.5 2.5M12 11l2.5 2.5M15 8l2.5 2.5"/></svg></button>
+    <span class="sep"></span>
+    <button id="magBtn" title="자석: 가까운 시가·고가·저가·종가에 붙음 (⌘ 누르는 동안 반대로)"><svg viewBox="0 0 28 28"><path d="M8 5v9a6 6 0 0 0 12 0V5h-4v9a2 2 0 0 1-4 0V5z"/><path d="M8 9h4M16 9h4"/></svg></button>
+    <button id="keepBtn" title="그리기 유지: 하나 그려도 도구가 안 풀림"><svg viewBox="0 0 28 28"><path d="M6 22l1.5-5.5L18 6l4 4L11.5 20.5z"/><path d="M15.5 8.5l4 4"/></svg></button>
+    <button id="eyeBtn" title="그림 숨기기 (⌘⌥H)"><svg viewBox="0 0 28 28"><path d="M3 14s4-7 11-7 11 7 11 7-4 7-11 7S3 14 3 14z"/><circle cx="14" cy="14" r="3"/></svg></button>
+    <span class="sep"></span>
+    <button data-tool="del" title="지우개: 그린 것을 클릭하면 삭제 (선택 후 Delete도 됨)"><svg viewBox="0 0 28 28"><path d="M11 22h12M8 19l9.5-9.5 5 5L17 20H9z"/></svg></button>
     <button id="clearDraw" title="그린 것 전부 삭제"><svg viewBox="0 0 28 28"><path d="M8 9h12M12 9V6h4v3M9.5 9l1 14h7l1-14"/></svg></button>
   </div>
   <div class="chartCol">
-    <div id="chartWrap"><canvas id="heat"></canvas><div id="chart"></div><canvas id="overlay"></canvas><div id="ohlc"></div></div>
+    <div id="chartWrap"><canvas id="heat"></canvas><div id="chart"></div><canvas id="overlay"></canvas><div id="ohlc"></div><button id="toRT" hidden title="최신 봉으로">»</button><div id="kbd" hidden><div class="kt"></div><input id="kbdIn" autocomplete="off" spellcheck="false"><div class="kh"></div><div class="kl"></div></div></div>
     <div id="bottom"><span id="ranges"></span><span class="sep"></span><span id="clock"></span><span class="sep"></span>
       <button id="logBtn" title="로그 가격축">log</button><button id="fitBtn" title="세로 범위를 캔들에 자동 맞춤">auto</button></div>
   </div>
@@ -136,6 +158,7 @@
       200달러 재계산(sim_200x.py, 2024-07~2026-11-04, BTC/ETH/SOL, 수수료 0.05%): 배율 1 = 260달러(+30%, 낙폭 -34%), 최근 1년 -9%, 최근 3개월 -27%. 배율 3 이상은 손해, 10·30배는 몇 주 안에 강제청산. 통계 증명 전. 교차 마진. 투자 조언 아님.</div>
   </aside>
 </main>
+<div id="menu" hidden></div>
 <script>
 const $ = id => document.getElementById(id);
 const TZ = -new Date().getTimezoneOffset() * 60;           // show candle times in local time (KST)
@@ -184,13 +207,21 @@ async function loadDaily(full) {
   dirty = true;
 }
 
-// ---- drawing tools: horizontal line, trend line, box, fib retracement. Anchored to time + price, so they follow the chart on
-// every interval; kept per market + symbol in this browser (localStorage). Click to place (two clicks for line/box/fib).
-const DCOL = "#4fc3f7", FIB = [0, .236, .382, .5, .618, .786, 1];
-let tool = "", shapes = [], pending = null, mouse = null;
+// ---- drawings, TradingView style. Anchored to time + price (so they follow every interval), kept per symbol in this browser.
+// Tools: trend line ⌥T, horizontal ⌥H, vertical ⌥V, box ⌥⇧R, fib ⌥F, measure Shift+click. Place by click-click or press-drag-release.
+// Click a drawing to select it: drag an anchor to reshape, drag the body to move, Delete removes, right-click for a menu, ⌘Z / ⌘⇧Z.
+// Magnet (or ⌘ held) snaps to the bar's O/H/L/C; Shift locks a trend line to 45° steps. Moves are in pixels, so a log axis works.
+const BLUE = "#2962ff", FIB = [[0, "#787b86"], [.236, "#f23645"], [.382, "#ff9800"], [.5, "#4caf50"], [.618, "#089981"], [.786, "#00bcd4"], [1, "#787b86"]];
+let tool = "", shapes = [], pending = null, mouse = null, sel = -1, meas = null, magnet = false, keepDraw = false, undo = [], redo = [];
 const drawKey = () => `draw_perp_${$("sym").value}`;
-const loadShapes = () => { try { shapes = JSON.parse(localStorage.getItem(drawKey()) || "[]"); } catch { shapes = []; } pending = null; };
-const saveShapes = () => { try { localStorage.setItem(drawKey(), JSON.stringify(shapes)); } catch {} };
+const loadShapes = () => { try { shapes = JSON.parse(localStorage.getItem(drawKey()) || "[]"); } catch { shapes = []; }
+  pending = null; sel = -1; meas = null; undo = []; redo = []; };
+const saveShapes = () => { try { localStorage.setItem(drawKey(), JSON.stringify(shapes)); } catch {} dirty = true; };
+const snapUndo = () => { undo.push(JSON.stringify(shapes)); if (undo.length > 100) undo.shift(); redo.length = 0; };
+function undoRedo(dir) {                                 // -1 undo, +1 redo
+  const [from, to] = dir < 0 ? [undo, redo] : [redo, undo]; if (!from.length) return;
+  to.push(JSON.stringify(shapes)); shapes = JSON.parse(from.pop()); sel = -1; saveShapes();
+}
 const barSec = () => data.length > 1 ? data[data.length - 1].time - data[data.length - 2].time : 86400;
 function xToTime(x) {
   const l = chart.timeScale().coordinateToLogical(x), n = data.length;
@@ -211,61 +242,129 @@ function timeToX(t) {
   return xa === null || xb === null ? null : xa + (xb - xa) * (l - f);
 }
 function shapeGeom(s) {                                  // pixel geometry, or null when it cannot be placed yet
+  if (s.type === "v") { const x1 = timeToX(s.t1); return x1 === null ? null : { x1 }; }
   const y1 = series.priceToCoordinate(s.p1);
   if (s.type === "h") return y1 === null ? null : { y1 };
   const x1 = timeToX(s.t1), x2 = timeToX(s.t2), y2 = series.priceToCoordinate(s.p2);
   return [x1, x2, y1, y2].some(v => v === null) ? null : { x1, x2, y1, y2 };
 }
-function drawShapes(g, y, paneW, H) {
+// the handles of a selected drawing; each says which time / price field it moves (box corners mix the two points)
+const ANCH = { line: [["t1", "p1"], ["t2", "p2"]], fib: [["t1", "p1"], ["t2", "p2"]], rect: [["t1", "p1"], ["t2", "p2"], ["t1", "p2"], ["t2", "p1"]],
+  h: [[null, "p1"]], v: [["t1", null]] };
+const anchorPts = (s, q, pw, ph) => ANCH[s.type].map(([t, p]) => ({ t, p, x: t ? q[t === "t1" ? "x1" : "x2"] : pw / 2, y: p ? q[p === "p1" ? "y1" : "y2"] : ph / 2 }));
+function drawShapes(g, pw, ph, W, H) {
   const list = shapes.slice();
-  if (mouse && pending) list.push({ ...pending, t2: mouse.t, p2: mouse.p, preview: true });
-  else if (mouse && tool === "h") list.push({ type: "h", p1: mouse.p, preview: true });
-  if (!list.length) return;
-  g.save(); g.beginPath(); g.rect(0, 0, paneW, H - 28); g.clip();
-  g.font = "11px -apple-system, sans-serif"; g.lineWidth = 1.4;
-  for (const s of list) {
+  if (mouse && pending) list.push({ ...pending, t2: mouse.t, p2: mouse.p });
+  else if (mouse && (tool === "h" || tool === "v")) list.push({ type: tool, t1: mouse.t, p1: mouse.p });
+  const y = v => series.priceToCoordinate(v), seg = (a, b, c, d) => { g.beginPath(); g.moveTo(a, b); g.lineTo(c, d); g.stroke(); };
+  g.save(); g.beginPath(); g.rect(0, 0, pw, ph); g.clip();
+  g.font = "12px -apple-system, BlinkMacSystemFont, sans-serif"; g.textBaseline = "middle";
+  for (const s of list) {                                // TradingView's default styles
     const q = shapeGeom(s); if (!q) continue;
-    g.strokeStyle = g.fillStyle = DCOL; g.setLineDash(s.preview ? [4, 3] : []);
-    const seg = (a, b, c, d) => { g.beginPath(); g.moveTo(a, b); g.lineTo(c, d); g.stroke(); };
-    if (s.type === "h") { seg(0, q.y1, paneW, q.y1); g.fillText(fmt(s.p1), 52, q.y1 - 4); }
+    g.strokeStyle = g.fillStyle = BLUE; g.lineWidth = 2; g.globalAlpha = 1;
+    if (s.type === "h") seg(0, q.y1, pw, q.y1);
+    else if (s.type === "v") continue;                   // drawn below, across every pane like TradingView
     else if (s.type === "line") seg(q.x1, q.y1, q.x2, q.y2);
     else if (s.type === "rect") {
       const x = Math.min(q.x1, q.x2), yy = Math.min(q.y1, q.y2), w = Math.abs(q.x2 - q.x1), h = Math.abs(q.y2 - q.y1);
-      g.fillStyle = "rgba(79,195,247,.12)"; g.fillRect(x, yy, w, h); g.strokeRect(x, yy, w, h);
+      g.lineWidth = 1; g.strokeStyle = "#9c27b0"; g.fillStyle = "rgba(156,39,176,.2)"; g.fillRect(x, yy, w, h); g.strokeRect(x, yy, w, h);
     } else if (s.type === "fib") {
-      const x = Math.min(q.x1, q.x2);
-      g.setLineDash([2, 3]); seg(q.x1, q.y1, q.x2, q.y2); g.setLineDash(s.preview ? [4, 3] : []);
-      for (const f of FIB) { const p = s.p2 + (s.p1 - s.p2) * f, yy = y(p); if (yy === null) continue;
-        g.globalAlpha = f === 0 || f === 1 ? 1 : .75; seg(x, yy, paneW, yy); g.fillText(`${f} (${fmt(p)})`, x + 4, yy - 3); }
-      g.globalAlpha = 1;
+      const xa = Math.min(q.x1, q.x2), xb = Math.max(q.x1, q.x2), lv = FIB.map(([f, c]) => [f, c, y(s.p2 + (s.p1 - s.p2) * f), s.p2 + (s.p1 - s.p2) * f]);
+      g.lineWidth = 1; g.textAlign = "right";
+      lv.forEach(([f, c, yy, p], k) => { if (yy === null) return;
+        const y0 = k ? lv[k - 1][2] : null;
+        if (y0 !== null) { g.globalAlpha = .15; g.fillStyle = c; g.fillRect(xa, Math.min(y0, yy), xb - xa, Math.abs(yy - y0)); }
+        g.globalAlpha = 1; g.strokeStyle = g.fillStyle = c; seg(xa, yy, xb, yy); g.fillText(`${f} (${fmt(p)})`, xa - 6, yy); });
+      g.textAlign = "left"; g.setLineDash([4, 4]); g.strokeStyle = "#787b86"; seg(q.x1, q.y1, q.x2, q.y2); g.setLineDash([]);
     }
   }
-  g.setLineDash([]); g.restore();
+  g.globalAlpha = 1;
+  if (sel >= 0 && shapes[sel]) { const s = shapes[sel], q = shapeGeom(s);   // selected: white handles with a blue ring
+    if (q) for (const a of anchorPts(s, q, pw, ph)) { g.beginPath(); g.arc(a.x, a.y, 5, 0, 7); g.fillStyle = "#fff"; g.fill(); g.lineWidth = 1.5; g.strokeStyle = BLUE; g.stroke(); } }
+  g.restore();
+  // value labels on the axes for horizontal / vertical lines, in the line colour
+  g.font = "12px -apple-system, BlinkMacSystemFont, sans-serif"; g.textBaseline = "middle"; const tsH = chart.timeScale().height();
+  for (const s of list) {
+    if (s.type === "h") { const yy = y(s.p1); if (yy === null || yy < 0 || yy > ph) continue;
+      g.fillStyle = BLUE; g.fillRect(pw, yy - 9, W - pw, 18); g.fillStyle = "#fff"; g.fillText(fmt(s.p1), pw + 8, yy); }
+    else if (s.type === "v") { const xx = timeToX(s.t1); if (xx === null || xx < 0 || xx > pw) continue;
+      g.strokeStyle = BLUE; g.lineWidth = 2; g.beginPath(); g.moveTo(xx, 0); g.lineTo(xx, H - tsH); g.stroke();
+      const txt = chart.options().localization.timeFormatter(Math.round(s.t1)), w = g.measureText(txt).width + 16;
+      g.fillStyle = BLUE; g.fillRect(xx - w / 2, H - tsH, w, tsH); g.fillStyle = "#fff"; g.fillText(txt, xx - w / 2 + 8, H - tsH / 2); }
+  }
+  g.textBaseline = "alphabetic";
+}
+function drawMeasure(g, pw, ph) {                         // TradingView's ruler: box, arrows, Δprice (Δ%) and bars / time
+  const a = meas.a, b = meas.b || mouse; if (!b) return;
+  const x1 = timeToX(a.t), x2 = timeToX(b.t), y1 = series.priceToCoordinate(a.p), y2 = series.priceToCoordinate(b.p);
+  if ([x1, x2, y1, y2].some(v => v === null)) return;
+  const up = b.p >= a.p, c = up ? BLUE : DN, xm = (x1 + x2) / 2, ym = (y1 + y2) / 2, ts = chart.timeScale();
+  const seg = (u, v, w, z) => { g.beginPath(); g.moveTo(u, v); g.lineTo(w, z); g.stroke(); };
+  const head = (x, y, ux, uy) => { g.beginPath(); g.moveTo(x, y); g.lineTo(x - ux * 7 - uy * 4, y - uy * 7 + ux * 4); g.lineTo(x - ux * 7 + uy * 4, y - uy * 7 - ux * 4); g.fill(); };
+  g.save(); g.beginPath(); g.rect(0, 0, pw, ph); g.clip();
+  g.fillStyle = up ? "rgba(41,98,255,.2)" : "rgba(242,54,69,.2)"; g.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+  g.strokeStyle = g.fillStyle = c; g.lineWidth = 1; seg(xm, y1, xm, y2); seg(x1, ym, x2, ym);
+  if (Math.abs(y2 - y1) > 8) head(xm, y2, 0, Math.sign(y2 - y1)); if (Math.abs(x2 - x1) > 8) head(x2, ym, Math.sign(x2 - x1), 0);
+  const bars = Math.round((ts.coordinateToLogical(x2) ?? 0) - (ts.coordinateToLogical(x1) ?? 0)), dt = Math.abs(b.t - a.t);
+  const dur = dt >= 86400 ? Math.floor(dt / 86400) + "d" + (dt % 86400 >= 3600 ? " " + Math.floor(dt % 86400 / 3600) + "h" : "") : Math.round(dt / 3600) + "h";
+  const l1 = `${b.p < a.p ? "−" : ""}${fmt(Math.abs(b.p - a.p))} (${sgn(pct(b.p, a.p))})`, l2 = `${bars} bars, ${dur}`;
+  g.font = "12px -apple-system, BlinkMacSystemFont, sans-serif"; const w = Math.max(g.measureText(l1).width, g.measureText(l2).width) + 20, h = 40;
+  const bx = xm - w / 2, by = up ? Math.min(y1, y2) - h - 6 : Math.max(y1, y2) + 6;
+  g.beginPath(); g.roundRect(bx, by, w, h, 4); g.fill(); g.fillStyle = "#fff"; g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillText(l1, xm, by + 12); g.fillText(l2, xm, by + 28); g.textAlign = "left"; g.textBaseline = "alphabetic";
+  g.restore();
+}
+function drawUI(g, W, H) {                                // drawings, ruler, the "»" back-to-now button, toolbar toggles
+  const pw = chart.timeScale().width(), ph = chart.panes()[0].getHeight();
+  if (show.draw) drawShapes(g, pw, ph, W, H);
+  if (meas) drawMeasure(g, pw, ph);
+  const r = chart.timeScale().getVisibleLogicalRange(), b = $("toRT");
+  b.hidden = !r || r.to >= data.length - 1; b.style.left = pw - 38 + "px"; b.style.top = ph - 38 + "px";
+  $("eyeBtn").classList.toggle("on", !show.draw); $("magBtn").classList.toggle("on", magnet); $("keepBtn").classList.toggle("on", keepDraw);
 }
 function hitShape(x, yy) {                                 // index of the top-most drawing under the point, or -1
+  if (!show.draw) return -1;
   const dSeg = (a, b, c, d) => { const L = (c - a) ** 2 + (d - b) ** 2, t = L ? Math.max(0, Math.min(1, ((x - a) * (c - a) + (yy - b) * (d - b)) / L)) : 0;
     return Math.hypot(x - (a + t * (c - a)), yy - (b + t * (d - b))); };
   for (let i = shapes.length - 1; i >= 0; i--) {
     const s = shapes[i], q = shapeGeom(s); if (!q) continue;
-    if (s.type === "h" ? Math.abs(yy - q.y1) < 7 : s.type === "line" ? dSeg(q.x1, q.y1, q.x2, q.y2) < 7
-      : x >= Math.min(q.x1, q.x2) - 5 && (s.type === "fib" || x <= Math.max(q.x1, q.x2) + 5) && yy >= Math.min(q.y1, q.y2) - 5 && yy <= Math.max(q.y1, q.y2) + 5) return i;
+    const box = () => x >= Math.min(q.x1, q.x2) - 5 && x <= Math.max(q.x1, q.x2) + 5 && yy >= Math.min(q.y1, q.y2) - 5 && yy <= Math.max(q.y1, q.y2) + 5;
+    if (s.type === "h" ? Math.abs(yy - q.y1) < 6 : s.type === "v" ? Math.abs(x - q.x1) < 6 : s.type === "line" ? dSeg(q.x1, q.y1, q.x2, q.y2) < 6 : box()) return i;
   }
   return -1;
 }
+function hitAnchor(x, yy) {
+  const s = shapes[sel]; if (!s || !show.draw) return null; const q = shapeGeom(s);
+  return q && anchorPts(s, q, chart.timeScale().width(), chart.panes()[0].getHeight()).find(a => Math.hypot(a.x - x, a.y - yy) < 8) || null;
+}
+function pointAt(x, yy, e, from) {                         // chart point under the mouse, with Shift-45° and the magnet
+  if (from && e.shiftKey && tool === "line") { const fx = timeToX(from.t), fy = series.priceToCoordinate(from.p);
+    if (fx !== null && fy !== null) { const dx = x - fx, dy = yy - fy, r = Math.hypot(dx, dy), a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4;
+      x = fx + r * Math.cos(a); yy = fy + r * Math.sin(a); } }
+  let t = xToTime(x), p = series.coordinateToPrice(yy);
+  if (t === null || p === null) return null;
+  if (magnet !== e.metaKey) {                              // ⌘ flips the magnet while held, like TradingView
+    const b = data[Math.round(chart.timeScale().coordinateToLogical(x))];
+    if (b) { const [v, d] = [b.open, b.high, b.low, b.close].map(v => [v, Math.abs(series.priceToCoordinate(v) - yy)]).sort((u, w) => u[1] - w[1])[0];
+      if (d < 40) { p = v; t = b.time; } }
+  }
+  return { t, p };
+}
+function shiftShape(s, o, dx, dy) {                        // move by pixels, so a log price axis moves the same way it looks
+  for (const k of ["t1", "t2"]) if (o[k] !== undefined) { const x = timeToX(o[k]), t = x === null ? null : xToTime(x + dx); if (t !== null) s[k] = t; }
+  for (const k of ["p1", "p2"]) if (o[k] !== undefined) { const y = series.priceToCoordinate(o[k]), p = y === null ? null : series.coordinateToPrice(y + dy); if (p !== null) s[k] = p; }
+}
 function setTool(t) {
-  tool = t; pending = null; mouse = null; lastSig = "";
+  tool = t; pending = null; if (t) sel = -1;
   document.querySelectorAll("#tools button[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
+  dirty = true;
 }
-function chartClick(x, yy) {                               // a click (not a drag) on the price pane while a tool is active
-  if (!tool || x > chart.timeScale().width() || yy > chart.panes()[0].getHeight()) return;
-  const t = xToTime(x), p = series.coordinateToPrice(yy);
-  if (t === null || p === null) return;
-  if (tool === "del") { const i = hitShape(x, yy); if (i >= 0) shapes.splice(i, 1); }
-  else if (tool === "h") { shapes.push({ type: "h", p1: p }); setTool(""); }
-  else if (!pending) { pending = { type: tool, t1: t, p1: p }; lastSig = ""; return; }
-  else { shapes.push({ ...pending, t2: t, p2: p }); setTool(""); }
-  saveShapes(); lastSig = "";
-}
+const removeSel = () => { if (sel < 0 || !shapes[sel]) return; snapUndo(); shapes.splice(sel, 1); sel = -1; saveShapes(); };
+const cloneShape = i => { snapUndo(); const o = shapes[i], c = JSON.parse(JSON.stringify(o)); shiftShape(c, o, 20, 20); shapes.push(c); sel = shapes.length - 1; saveShapes(); };
+const toggleDraw = () => { show.draw = !show.draw; try { localStorage.setItem("layers", JSON.stringify(show)); } catch {} if (!show.draw) sel = -1; applyLayers(); };
+const clearAll = () => { if (shapes.length && confirm("그린 것을 전부 지울까요?")) { snapUndo(); shapes = []; sel = -1; saveShapes(); setTool(""); } };
+const resetView = () => { chart.priceScale("right").applyOptions({ autoScale: true });
+  const n = $("iv").value === "1d" ? 180 : 200; chart.timeScale().setVisibleLogicalRange({ from: data.length - n, to: data.length - 1 + 10 }); };
 
 // values of the candle under the mouse (the latest one otherwise), so the close is read as a number, not from the picture
 let hoverBar = null;
@@ -607,7 +706,7 @@ function draw(panels = true) {
   if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
   const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
   // the user's drawings, kept inside the price pane
-  if (show.draw) drawShapes(g, v => series.priceToCoordinate(v), chart.timeScale().width(), chart.panes()[0].getHeight() + 28);
+  drawUI(g, W, H);
   drawCountdown(g, W);
   $("logBtn").classList.toggle("on", $("scale").value === "1");
   $("fitBtn").classList.toggle("on", chart.priceScale("right").options().autoScale);
@@ -733,11 +832,15 @@ const viewSig = () => { const r = chart.timeScale().getVisibleLogicalRange(), re
 })();
 setInterval(() => dirty = true, 500);
 $("logBtn").addEventListener("click", () => { $("scale").value = $("scale").value === "1" ? "0" : "1"; $("scale").dispatchEvent(new Event("change")); });
-// TradingView's date-range buttons: show that much time up to the last bar (only what is loaded; scrolling left loads more)
+// TradingView's date-range buttons: switch to that range's interval (nearest of ours), then show that much time up to the last bar
 const RANGES = [["5D", 5], ["1M", 30], ["3M", 91], ["6M", 182], ["YTD", "ytd"], ["1Y", 365], ["5Y", 1826], ["All", 0]];
+const RANGE_IV = { "5D": "1h", "1M": "1h", "3M": "1h", "6M": "4h", "YTD": "1d", "1Y": "1d", "5Y": "1d", All: "1d" };   // TV: 5m 30m 1h 2h 1D 1D 1W 1M
 $("ranges").innerHTML = RANGES.map(([n]) => `<button data-r="${n}">${n}</button>`).join("");
-$("ranges").addEventListener("click", e => {
-  const d = new Map(RANGES).get(e.target.dataset.r); if (d === undefined || !data.length) return;
+$("ranges").addEventListener("click", async e => {
+  const n = e.target.dataset.r, d = new Map(RANGES).get(n); if (d === undefined) return;
+  if ($("iv").value !== RANGE_IV[n]) {                 // new chart: wait until it is laid out, or the range is ignored
+    $("iv").value = RANGE_IV[n]; saveView(); await start(); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); }
+  if (!data.length) return;
   if (!d) return chart.timeScale().fitContent();
   const to = data[data.length - 1].time, from = d === "ytd" ? Date.UTC(new Date().getUTCFullYear(), 0, 1) / 1000 + TZ : to - d * 86400;
   // before the first loaded bar = a negative logical index; onRange then loads the older bars into that space
@@ -745,28 +848,135 @@ $("ranges").addEventListener("click", e => {
   chart.timeScale().setVisibleLogicalRange({ from: l, to: data.length - 1 + 10 });
 });
 $("fitBtn").addEventListener("click", () => { chart.priceScale("right").applyOptions({ autoScale: true }); chart.timeScale().scrollToRealTime(); });
-// free drag in every direction: the chart library only scrolls the price axis while auto-fit is off, so switch it off when a
-// press starts and switch it back on if the drag turned out to be horizontal (맞춤 or a double-click on the price axis re-fits)
-let pressX = null, pressY = null, wasAuto = false;
+// ---- mouse: a press is a pan, a drawing (tool active), a ruler (Shift / measure tool) or a drag of the selected drawing.
+// Panning is switched off for the press when it is not a pan (set in the capture phase, before the chart library sees it).
+const rel = e => { const r = $("chartWrap").getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+const inPane = (x, yy) => x >= 0 && x < chart.timeScale().width() && yy >= 0 && yy < chart.panes()[0].getHeight();
+const lockPan = on => chart.applyOptions({ handleScroll: { pressedMouseMove: !on, horzTouchDrag: !on, vertTouchDrag: !on } });
+let press = null;
 $("chartWrap").addEventListener("pointerdown", e => {
-  if (e.target.closest("#tools")) return;
-  const ps = chart.priceScale("right"); wasAuto = ps.options().autoScale; pressX = e.clientX; pressY = e.clientY;
-  if (wasAuto) ps.applyOptions({ autoScale: false });
+  if (e.button !== 0 || !series || !data.length || e.target.closest("button, #kbd")) return;
+  closeMenu();
+  const [x, yy] = rel(e), ps = chart.priceScale("right");
+  press = { x, y: yy, mode: "pan", wasAuto: ps.options().autoScale };
+  if (inPane(x, yy)) {
+    if (tool === "measure" || meas || (e.shiftKey && !tool)) {   // 1st click starts, 2nd fixes, the next one removes it
+      press.mode = "measure";
+      if (meas && meas.b) press.clear = true;
+      else if (!meas) { const pt = pointAt(x, yy, e); if (pt) { meas = { a: pt }; press.fresh = true; } }
+    } else if (tool) {
+      press.mode = "draw";
+      if (!pending && !["h", "v", "del"].includes(tool)) { const pt = pointAt(x, yy, e); if (pt) { pending = { type: tool, t1: pt.t, p1: pt.p }; press.fresh = true; } }
+    } else {
+      const a = hitAnchor(x, yy), i = a ? sel : hitShape(x, yy);
+      sel = i; dirty = true;
+      if (i >= 0) Object.assign(press, { mode: a ? "anchor" : "move", a, orig: JSON.parse(JSON.stringify(shapes[i])), moved: false });
+    }
+  }
+  if (press.mode !== "pan") lockPan(true);
+  // free drag in every direction: the library only scrolls the price axis while auto-fit is off; it is switched back on in
+  // pointerup when the drag was horizontal (auto or a double-click on the price axis re-fits)
+  else if (press.wasAuto) ps.applyOptions({ autoScale: false });
 }, true);
+window.addEventListener("pointermove", e => {
+  if (!series || !data.length) return;
+  const [x, yy] = rel(e);
+  mouse = pointAt(x, yy, e, pending || (meas && !meas.b ? meas.a : null));
+  if (press && (press.mode === "move" || press.mode === "anchor") && (press.moved || Math.hypot(x - press.x, yy - press.y) > 2)) {
+    if (!press.moved) { const now = shapes[sel]; shapes[sel] = press.orig; snapUndo(); shapes[sel] = now; press.moved = true; }
+    const s = shapes[sel];
+    if (press.mode === "move") shiftShape(s, press.orig, x - press.x, yy - press.y);
+    else if (mouse) { if (press.a.t) s[press.a.t] = mouse.t; if (press.a.p) s[press.a.p] = mouse.p; }
+  }
+  if (!press) $("chartWrap").dataset.cur = !inPane(x, yy) ? "" : tool ? "crosshair" : hitAnchor(x, yy) ? "move" : hitShape(x, yy) >= 0 ? "pointer" : "crosshair";
+  if (pending || tool || meas || press) lastSig = "";
+});
 window.addEventListener("pointerup", e => {
-  if (pressY === null) return;
-  if (wasAuto && Math.abs(e.clientY - pressY) < 6) chart.priceScale("right").applyOptions({ autoScale: true });
-  if (Math.hypot(e.clientX - pressX, e.clientY - pressY) < 5) { const r = $("chartWrap").getBoundingClientRect(); chartClick(e.clientX - r.left, e.clientY - r.top); }
-  pressX = pressY = null;
+  if (!press) return;
+  const [x, yy] = rel(e), moved = Math.hypot(x - press.x, yy - press.y) > 5, m = press.mode;
+  if (m === "pan") { if (press.wasAuto && Math.abs(yy - press.y) < 6) chart.priceScale("right").applyOptions({ autoScale: true }); }
+  else if (m === "measure") {
+    if (press.clear) { meas = null; if (tool === "measure") setTool(""); }
+    else if (meas && !meas.b && (moved || !press.fresh)) { const pt = pointAt(x, yy, e); if (pt) meas.b = pt; if (tool === "measure") setTool(""); }
+  } else if (m === "draw") {
+    const pt = pointAt(x, yy, e, pending), done = () => { pending = null; if (!keepDraw) setTool(""); };
+    if (pt && tool === "del") { const i = hitShape(x, yy); if (i >= 0) { snapUndo(); shapes.splice(i, 1); saveShapes(); } }
+    else if (pt && (tool === "h" || tool === "v")) { snapUndo(); shapes.push(tool === "h" ? { type: "h", p1: pt.p } : { type: "v", t1: pt.t }); done(); sel = shapes.length - 1; saveShapes(); }
+    else if (pt && pending && (moved || !press.fresh)) { snapUndo(); shapes.push({ ...pending, t2: pt.t, p2: pt.p }); done(); sel = shapes.length - 1; saveShapes(); }
+  } else if (press.moved) saveShapes();
+  if (m !== "pan") lockPan(false);
+  press = null; dirty = true;
 }, true);
-$("chartWrap").addEventListener("pointermove", e => {       // live preview while placing
-  if (!pending && tool !== "h") return;
-  const r = $("chartWrap").getBoundingClientRect(), t = xToTime(e.clientX - r.left), p = series.coordinateToPrice(e.clientY - r.top);
-  mouse = t === null || p === null ? null : { t, p }; lastSig = "";
+$("toRT").addEventListener("click", () => chart.timeScale().scrollToRealTime());
+// right-click: a drawing's menu, or the chart's; right-click while drawing cancels it
+function openMenu(cx, cy, items) {
+  const m = $("menu");
+  m.innerHTML = items.map(([n, k], i) => `<div data-i="${i}"><span>${n}</span><kbd>${k}</kbd></div>`).join("");
+  m.hidden = false; m.style.left = Math.min(cx, innerWidth - m.offsetWidth - 8) + "px"; m.style.top = Math.min(cy, innerHeight - m.offsetHeight - 8) + "px";
+  m.onclick = e => { const d = e.target.closest("[data-i]"); if (!d) return; closeMenu(); items[+d.dataset.i][2](); };
+}
+const closeMenu = () => { $("menu").hidden = true; };
+window.addEventListener("pointerdown", e => { if (!e.target.closest("#menu")) closeMenu(); }, true);
+$("chartWrap").addEventListener("contextmenu", e => {
+  e.preventDefault(); if (!series || !data.length) return;
+  const [x, yy] = rel(e); if (!inPane(x, yy)) return;
+  if (tool || pending || meas) { setTool(""); meas = null; return; }
+  const i = hitShape(x, yy); sel = i; dirty = true;
+  openMenu(e.clientX, e.clientY, i >= 0 ? [["복제", "", () => cloneShape(i)], ["삭제", "Del", removeSel]]
+    : [["차트 초기화", "⌥R", resetView], [show.draw ? "그림 숨기기" : "그림 보이기", "⌘⌥H", toggleDraw], ["그림 모두 삭제", "", clearAll]]);
 });
 document.querySelectorAll("#tools button[data-tool]").forEach(b => b.addEventListener("click", () => setTool(b.dataset.tool)));
-$("clearDraw").addEventListener("click", () => { if (shapes.length && confirm("그린 것을 전부 지울까요?")) { shapes = []; saveShapes(); setTool(""); } });
-document.addEventListener("keydown", e => { if (e.key === "Escape") setTool(""); });
+$("magBtn").addEventListener("click", () => { magnet = !magnet; dirty = true; });
+$("keepBtn").addEventListener("click", () => { keepDraw = !keepDraw; dirty = true; });
+$("eyeBtn").addEventListener("click", toggleDraw);
+$("clearDraw").addEventListener("click", clearAll);
+// type on the chart: digits open "Change interval", letters open symbol search; Enter applies (TradingView's keyboard flow)
+const IVS = [[/^(1h|60)$/, "1h", "1 hour"], [/^(4h|240)$/, "4h", "4 hours"], [/^(1d|d)$/, "1d", "1 day"]];
+const SYMS = [["BTCUSDT", "Bitcoin"], ["ETHUSDT", "Ethereum"], ["SOLUSDT", "Solana"]];
+const setSel = (id, v) => { if ($(id).value !== v) { $(id).value = v; $(id).dispatchEvent(new Event("change")); } };
+function kbdMatch() {
+  const v = $("kbdIn").value.trim().toLowerCase();
+  return $("kbd").dataset.mode === "iv" ? IVS.filter(([r]) => r.test(v)) : SYMS.filter(([s]) => s.toLowerCase().startsWith(v));
+}
+function kbdHint() {
+  const iv = $("kbd").dataset.mode === "iv", m = kbdMatch();
+  $("kbd").querySelector(".kh").textContent = iv ? (m.length ? m[0][2] : "1h · 4h · 1D 만 있음") : m.length ? "" : "BTC · ETH · SOL 만 있음";
+  $("kbd").querySelector(".kl").innerHTML = iv ? "" : m.map(([s, n], i) => `<div data-i="${i}">${s}.P<span>${n} 무기한 · Binance</span></div>`).join("");
+}
+function kbdApply(i = 0) {
+  const m = kbdMatch()[i]; closeKbd(); if (!m) return;
+  $("kbd").dataset.mode === "iv" ? setSel("iv", m[1]) : setSel("sym", m[0]);
+}
+function openKbd(ch) {
+  const iv = /\d/.test(ch); $("kbd").dataset.mode = iv ? "iv" : "sym"; $("kbd").hidden = false;
+  $("kbd").querySelector(".kt").textContent = iv ? "Change interval" : "Symbol search";
+  $("kbdIn").value = ch; $("kbdIn").focus(); kbdHint();
+}
+const closeKbd = () => { $("kbd").hidden = true; $("kbdIn").blur(); };
+$("kbdIn").addEventListener("input", kbdHint);
+$("kbdIn").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter") kbdApply(); else if (e.key === "Escape") closeKbd(); });
+$("kbdIn").addEventListener("blur", () => setTimeout(() => $("kbd").hidden = true, 150));
+$("kbd").addEventListener("pointerdown", e => { const d = e.target.closest("[data-i]"); if (d) { e.preventDefault(); kbdApply(+d.dataset.i); } });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") { closeMenu(); setTool(""); sel = -1; meas = null; dirty = true; return; }
+  if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) || !series || !data.length) return;
+  const k = e.code, mod = e.metaKey || e.ctrlKey, ts = chart.timeScale();
+  if (mod && k === "KeyZ") { e.preventDefault(); return undoRedo(e.shiftKey ? 1 : -1); }
+  if (mod && k === "KeyY") { e.preventDefault(); return undoRedo(1); }
+  if (mod && e.altKey && k === "KeyH") { e.preventDefault(); return toggleDraw(); }
+  if (mod) return;
+  if ((e.key === "Delete" || e.key === "Backspace") && sel >= 0) { e.preventDefault(); return removeSel(); }
+  if (e.altKey) {
+    if (k === "KeyR" && !e.shiftKey) { e.preventDefault(); return resetView(); }
+    if (k === "KeyH" && mouse) { e.preventDefault(); snapUndo(); shapes.push({ type: "h", p1: mouse.p }); sel = shapes.length - 1; return saveShapes(); }  // at the cursor
+    const t = { KeyT: "line", KeyV: "v", KeyF: "fib", KeyR: "rect" }[k];
+    if (t) { e.preventDefault(); return setTool(t); }
+    return;
+  }
+  if (k === "ArrowLeft" || k === "ArrowRight") { e.preventDefault(); return ts.scrollToPosition(ts.scrollPosition() + (k === "ArrowLeft" ? -1 : 1), false); }
+  if (k === "ArrowUp" || k === "ArrowDown") { e.preventDefault(); return ts.applyOptions({ barSpacing: ts.options().barSpacing * (k === "ArrowUp" ? 1.2 : 1 / 1.2) }); }
+  if (/^[a-z0-9]$/i.test(e.key)) { e.preventDefault(); openKbd(e.key); }
+});
 setInterval(() => loadDaily(false).then(() => { markers(); updateMAs(); }).catch(() => {}), 60000);
 // the view lives in the URL (?sym=SOLUSDT&iv=4h ...) so a link reopens exactly this chart
 const VIEW = ["sym", "iv", "scale"];
