@@ -35,8 +35,9 @@
   #tools svg { width:28px; height:28px; fill:none; stroke:currentColor; stroke-width:1.2; }
   #tools .sep { width:32px; height:1px; background:var(--line); margin:4px 0; }
   .chartCol { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--bg); }
-  #chartWrap { position:relative; flex:1; min-height:0; }
-  #chart { position:absolute; inset:0; }
+  #chartWrap { position:relative; flex:1; min-height:0; background:#000; }
+  #chart, #heat { position:absolute; inset:0; }
+  #heat { width:100%; height:100%; pointer-events:none; }
   #overlay { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:10; }
   #bottom { height:38px; flex-shrink:0; display:flex; align-items:center; gap:2px; padding:0 4px; border-top:1px solid var(--gut); }
   #bottom button { background:transparent; border:0; border-radius:4px; color:var(--tx2); padding:4px 7px; font-size:13px; }
@@ -107,7 +108,7 @@
     <button id="clearDraw" title="그린 것 전부 삭제"><svg viewBox="0 0 28 28"><path d="M8 9h12M12 9V6h4v3M9.5 9l1 14h7l1-14"/></svg></button>
   </div>
   <div class="chartCol">
-    <div id="chartWrap"><div id="chart"></div><canvas id="overlay"></canvas><div id="ohlc"></div></div>
+    <div id="chartWrap"><canvas id="heat"></canvas><div id="chart"></div><canvas id="overlay"></canvas><div id="ohlc"></div></div>
     <div id="bottom"><span id="ranges"></span><span class="sep"></span><span id="clock"></span><span class="sep"></span>
       <button id="logBtn" title="로그 가격축">log</button><button id="fitBtn" title="세로 범위를 캔들에 자동 맞춤">auto</button></div>
   </div>
@@ -121,12 +122,15 @@
     <div class="rule"></div>
     <div id="ckLadder"></div>
     <div class="rule"></div>
+    <div id="liqBox"></div>
+    <div class="rule"></div>
     <div class="crit-h">화면에 보이기 <span class="dim" style="font-size:11px">누르면 켜기/끄기</span></div>
     <div id="layers"></div>
     <div class="lv-foot" style="margin:8px 0 0;line-height:1.7">
       <b style="color:#089981">▲ 롱</b> 롱 진입 (숏 들고 있었으면 정리하고 롱) · <b style="color:#F23645">▼ 숏</b> 숏 진입<br>
       <b style="color:#8a90a0">● 롱 끝 / 숏 끝</b> 포지션 정리하고 현금으로 쉬기. Squeeze 지표(상승횡보)만 이렇게 쉬고, 장세가 바뀌어 지표가 바뀔 때도 생김<br>
       <b style="color:#ce93d8">보라선</b> 200일선: 가격이 위면 상승장, 아래면 하락장 (장세 판정)<br>
+      <b style="color:#fde725">청산지도</b> 밝을수록 그 가격에 아직 안 터진 청산 물량이 많다는 <b>추정</b>. 바이낸스 미결제약정 증가분에 레버리지 10·25·50·100배를 가정해 계산(거래소는 실제 포지션을 공개 안 함). 오른쪽 끝 막대 = 지금 단면(초록 롱·빨강 숏). 바이낸스가 OI를 30일치만 줘서 최근 30일만 보임<br>
       화살표는 4시간 마감 다음 봉에 찍힘 = 그 봉 시작가로 매매. 차트가 좁으면 글자 없이 점만 보임</div>
     <div class="tk-foot">장세(200일선·ADX)마다 분기별로 성적 1등 지표를 골라 4시간봉 신호대로 들고 있는 방식 (research_indicator_regimes.md).
       200달러 재계산(sim_200x.py, 2024-07~2026-11-04, BTC/ETH/SOL, 수수료 0.05%): 배율 1 = 260달러(+30%, 낙폭 -34%), 최근 1년 -9%, 최근 3개월 -27%. 배율 3 이상은 손해, 10·30배는 몇 주 안에 강제청산. 통계 증명 전. 교차 마진. 투자 조언 아님.</div>
@@ -202,7 +206,9 @@ function timeToX(t) {
   else if (t >= data[n - 1].time) l = n - 1 + (t - data[n - 1].time) / barSec();
   else { let a = 0, b = n - 1; while (b - a > 1) { const m = (a + b) >> 1; if (data[m].time <= t) a = m; else b = m; }
     l = a + (t - data[a].time) / (data[b].time - data[a].time); }
-  return chart.timeScale().logicalToCoordinate(l);
+  // the library returns 0 for a fractional logical index, so interpolate between the two whole bars around it
+  const ts = chart.timeScale(), f = Math.floor(l), xa = ts.logicalToCoordinate(f), xb = ts.logicalToCoordinate(f + 1);
+  return xa === null || xb === null ? null : xa + (xb - xa) * (l - f);
 }
 function shapeGeom(s) {                                  // pixel geometry, or null when it cannot be placed yet
   const y1 = series.priceToCoordinate(s.p1);
@@ -367,7 +373,7 @@ function regimeNow() {                                  // from the last complet
   return { code: r.code[n], above: r.above[n], adx: r.adx[n] };
 }
 // ---- the indicator in use, drawn on the 4h chart: SuperTrend over the candles, VW-MACD / Squeeze in a strip below them ----
-const LAYERS = [["ma", "200일선"], ["vol", "거래량"], ["marks", "화살표"], ["ind", "지표"], ["draw", "그림"]];
+const LAYERS = [["ma", "200일선"], ["vol", "거래량"], ["marks", "화살표"], ["ind", "지표"], ["liq", "청산지도"], ["draw", "그림"]];
 let show = {};
 try { show = JSON.parse(localStorage.getItem("layers") || "{}"); } catch {}
 LAYERS.forEach(([k]) => show[k] ??= true);
@@ -508,8 +514,94 @@ function showMarks() {
   marksApi.setMarkers(show.marks ? allMarks.map((m, k) => shown[k] ? m : { ...m, text: "" }) : []);
 }
 
+// ---- 청산지도: estimated liquidation heatmap (same model as liq_map.html). Binance does not publish positions, so: every 1h bar's
+// open-interest increase = new positions at that bar's typical price, split long/short by its taker-buy share, spread over assumed
+// leverage; liquidation price = entry x (1 -/+ 1/lev +/- maintenance margin). OI drops shrink every level pro rata; a level the
+// price range crosses is removed. Binance serves only 30 days of OI history, so the map covers the last 30 days.
+const LIQ_LEV = [[10, .30], [25, .30], [50, .25], [100, .15]], LIQ_MMR = .004, LIQ_NB = 300;   // ponytail: guessed leverage mix
+let liq = null;
+async function loadLiq() {
+  const sym = $("sym").value, get = u => fetch("https://fapi.binance.com" + u).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+  const oiUrl = end => `/futures/data/openInterestHist?symbol=${sym}&period=1h&limit=500${end ? "&endTime=" + end : ""}`;
+  const [k, oiA] = await Promise.all([get(`/fapi/v1/klines?symbol=${sym}&interval=1h&limit=740`), get(oiUrl())]);
+  const oiB = oiA.length ? await get(oiUrl(oiA[0].timestamp - 1)).catch(() => []) : [];
+  if (sym !== $("sym").value) return;
+  const oiAt = new Map([...oiB, ...oiA].map(o => [o.timestamp, +o.sumOpenInterest]));
+  const bars = k.map(b => ({ t: b[0], h: +b[2], l: +b[3], c: +b[4], v: +b[5], tb: +b[9] })).filter(b => oiAt.has(b.t));
+  if (bars.length < 24) return;
+  const lo = Math.min(...bars.map(b => b.l)) * .85, hi = Math.max(...bars.map(b => b.h)) * 1.15, R = (hi / lo) ** (1 / LIQ_NB);
+  const bin = p => Math.floor(Math.log(p / lo) / Math.log(R)), n = bars.length;
+  const L = new Float64Array(LIQ_NB), S = new Float64Array(LIQ_NB), grid = new Float32Array(n * LIQ_NB);
+  for (let i = 0; i < n; i++) {
+    const b = bars[i];
+    for (let j = Math.max(0, bin(b.l)); j <= Math.min(LIQ_NB - 1, bin(b.h)); j++) L[j] = S[j] = 0;   // the bar's range hit these
+    const a = oiAt.get(b.t), z = bars[i + 1] && oiAt.get(bars[i + 1].t);
+    if (z != null && z > a) {
+      const p = (b.h + b.l + b.c) / 3, usd = (z - a) * p, buy = b.v ? b.tb / b.v : .5;
+      for (const [lev, w] of LIQ_LEV) {
+        const jl = bin(p * (1 - 1 / lev + LIQ_MMR)), js = bin(p * (1 + 1 / lev - LIQ_MMR));
+        if (jl >= 0 && jl < LIQ_NB) L[jl] += usd * w * buy;
+        if (js >= 0 && js < LIQ_NB) S[js] += usd * w * (1 - buy);
+      }
+    } else if (z != null && a > 0) { const keep = z / a; for (let j = 0; j < LIQ_NB; j++) { L[j] *= keep; S[j] *= keep; } }
+    for (let j = 0; j < LIQ_NB; j++) grid[i * LIQ_NB + j] = L[j] + S[j];
+  }
+  // one pixel per (hour, price bin); drawn stretched under the candles. Brightness: 98th percentile = full; faint levels stay see-through
+  const nz = Array.from(grid).filter(v => v > 0).sort((x, y) => x - y), top = nz[Math.floor(nz.length * .98)] || 1;
+  const img = document.createElement("canvas"); img.width = n; img.height = LIQ_NB;
+  const g = img.getContext("2d"), px = g.createImageData(n, LIQ_NB), ST = [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]];
+  for (let i = 0; i < n; i++) for (let j = 0; j < LIQ_NB; j++) {
+    const v = grid[i * LIQ_NB + j]; if (!v) continue;
+    const x = Math.min(1, (v / top) ** .8), f = x * 4, s = Math.min(3, Math.floor(f)), r = f - s, c = ST[s], d = ST[s + 1], o = ((LIQ_NB - 1 - j) * n + i) * 4;
+    px.data[o] = c[0] + (d[0] - c[0]) * r; px.data[o + 1] = c[1] + (d[1] - c[1]) * r; px.data[o + 2] = c[2] + (d[2] - c[2]) * r; px.data[o + 3] = 20 + 190 * x;
+  }
+  g.putImageData(px, 0, 0);
+  liq = { sym, t0: bars[0].t / 1000 + TZ, n, img, L, S, lo, R };
+  dirty = true;
+}
+setInterval(() => loadLiq().catch(() => {}), 300000);
+function drawHeat() {
+  const cv = $("heat"), W = $("chartWrap").clientWidth, H = $("chartWrap").clientHeight, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  if (!show.liq || !liq || liq.sym !== $("sym").value) return;
+  const pw = chart.timeScale().width(), ph = chart.panes()[0].getHeight(), x0 = timeToX(liq.t0), x1 = timeToX(liq.t0 + liq.n * 3600);
+  if (x0 === null || x1 === null) return;
+  const y = p => series.priceToCoordinate(p), edge = j => liq.lo * liq.R ** j;
+  g.save(); g.beginPath(); g.rect(0, 0, pw, ph); g.clip(); g.imageSmoothingEnabled = false;
+  let pm = 0; for (let j = 0; j < LIQ_NB; j++) pm = Math.max(pm, liq.L[j], liq.S[j]);
+  const xr = timeToX(data[data.length - 1].time) + 8, room = Math.min(90, pw - xr);   // profile in the empty space right of the last bar
+  for (let j = 0; j < LIQ_NB; j++) {
+    const ya = y(edge(j + 1)), yb = y(edge(j)); if (ya === null || yb === null || yb < 0 || ya > ph) continue;
+    const h = Math.max(1, yb - ya);
+    g.drawImage(liq.img, 0, LIQ_NB - 1 - j, liq.n, 1, x0, ya, x1 - x0, h);
+    if (room < 16 || !pm) continue;
+    if (liq.S[j]) { g.fillStyle = "rgba(242,54,69,.8)"; g.fillRect(pw - liq.S[j] / pm * room, ya, liq.S[j] / pm * room, h); }
+    if (liq.L[j]) { g.fillStyle = "rgba(8,153,129,.8)"; g.fillRect(pw - liq.L[j] / pm * room, ya, liq.L[j] / pm * room, h); }
+  }
+  g.restore();
+}
+function liqBox() {                                     // the biggest clusters above / below, merged into 0.5% buckets
+  const live = nowPrice();
+  if (!show.liq || !liq || liq.sym !== $("sym").value || !live) return $("liqBox").innerHTML = show.liq ? `<div class="dim">청산지도 불러오는 중</div>` : "";
+  const usd = u => u >= 1e9 ? (u / 1e9).toFixed(2) + "B" : u >= 1e6 ? (u / 1e6).toFixed(1) + "M" : (u / 1e3).toFixed(0) + "K";
+  const top = (arr, up) => { const m = new Map();
+    for (let j = 0; j < LIQ_NB; j++) { const p = liq.lo * liq.R ** (j + .5); if (!arr[j] || (up ? p <= live : p >= live)) continue;
+      const k = Math.round(Math.log(p / live) / Math.log(1.005)), c = m.get(k) || { u: 0, pw: 0 }; c.u += arr[j]; c.pw += p * arr[j]; m.set(k, c); }
+    return [...m.values()].map(c => ({ p: c.pw / c.u, u: c.u })).sort((a, b) => b.u - a.u).slice(0, 3).sort((a, b) => b.p - a.p); };
+  const near = (arr, s) => { let u = 0; for (let j = 0; j < LIQ_NB; j++) { const r = liq.lo * liq.R ** (j + .5) / live - 1; if (s * r > 0 && Math.abs(r) <= .05) u += arr[j]; } return u; };
+  const row = (c, cls) => `<div class="cr ${cls}"><span class="ic">·</span><span>${fmt(c.p)} <span class="dim">${sgn(pct(c.p, live))}</span></span><span class="vl">${usd(c.u)}</span></div>`;
+  const su = near(liq.S, 1), lu = near(liq.L, -1);
+  $("liqBox").innerHTML = `<div class="crit-h">청산지도 <span class="dim" style="font-size:11px">추정 · 큰 덩어리</span></div>`
+    + `<div class="dim" style="color:#F23645">위 = 숏 청산 (오르면 강제 매수)</div>` + top(liq.S, true).map(c => row(c, "no")).join("")
+    + `<div class="dim" style="color:#089981;margin-top:4px">아래 = 롱 청산 (내리면 강제 매도)</div>` + top(liq.L, false).map(c => row(c, "ok")).join("")
+    + `<div class="lv-foot" style="margin:6px 0 0">±5% 안: 위 숏 ${usd(su)} · 아래 롱 ${usd(lu)} → ${su > lu ? "위쪽이 두꺼움 (오르면 숏 강제매수가 상승을 키울 수 있음)" : "아래쪽이 두꺼움 (내리면 롱 강제매도가 하락을 키울 수 있음)"}.
+      "세력이 이걸 보고 사냥한다"는 실증 근거는 약함. 매매 신호로 검증 안 됨.</div>`;
+}
+
 function draw(panels = true) {
   showMarks();     // panels = also refresh the card (not needed when only the view moved)
+  drawHeat();
   // size from the wrapper, never from the canvas itself (that feeds back and grows without bound)
   const cv = $("overlay"), W = $("chartWrap").clientWidth, H = $("chartWrap").clientHeight, dpr = window.devicePixelRatio || 1;
   if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
@@ -519,7 +611,7 @@ function draw(panels = true) {
   drawCountdown(g, W);
   $("logBtn").classList.toggle("on", $("scale").value === "1");
   $("fitBtn").classList.toggle("on", chart.priceScale("right").options().autoScale);
-  if (panels) { signal(); $("clock").textContent = new Date().toLocaleTimeString("en-GB") + ` (UTC${TZ >= 0 ? "+" : "−"}${Math.abs(TZ / 3600)})`; }
+  if (panels) { signal(); liqBox();$("clock").textContent = new Date().toLocaleTimeString("en-GB") + ` (UTC${TZ >= 0 ? "+" : "−"}${Math.abs(TZ / 3600)})`; }
 }
 // TradingView's bar-close countdown: a box under the last-price label, same colour
 const IV_SEC = { "1h": 3600, "4h": 14400, "1d": 86400 };
@@ -544,7 +636,8 @@ function initChart() {
     autoSize: true,
     grid: { vertLines: { color: "rgba(242,242,242,.2)", style: L.Dotted }, horzLines: { color: "rgba(242,242,242,.2)", style: L.Dotted } },
     rightPriceScale: { borderVisible: false, scaleMargins: { top: .1, bottom: .08 }, mode: +$("scale").value },
-    layout: { background: { color: "#000000" }, textColor: "#b8b8b8", fontSize: 12, fontFamily: '-apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
+    // see-through background: #chartWrap is black and the liquidation heatmap sits under the candles
+    layout: { background: { color: "rgba(0,0,0,0)" }, textColor: "#b8b8b8", fontSize: 12, fontFamily: '-apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
       panes: { separatorColor: "#222222", separatorHoverColor: "rgba(41,98,255,.25)" } },
     timeScale: { borderVisible: false, timeVisible: intra, rightOffset: 10, barSpacing: 6 },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: cross, horzLine: cross },
@@ -614,6 +707,7 @@ async function start() {
     chart.timeScale().setVisibleLogicalRange({ from: data.length - n, to: data.length + 5 });
   } catch (e) { $("upd").textContent = "데이터 오류: " + e.message; console.error(e); return; }
   connect(); loadH4();
+  if (!liq || liq.sym !== $("sym").value) loadLiq().catch(e => console.warn("청산지도", e));
 }
 
 ["sym", "iv"].forEach(id => $(id).addEventListener("change", start));
