@@ -384,7 +384,7 @@ function showOHLC() {
   // extra line kept from before: volume vs the median of the 30 bars before it, and the share bought at market
   const t = new Date(b.time * 1000).toISOString(), prev = data.slice(Math.max(0, i - 30), i).map(x => x.q).sort((x, y) => x - y), med = prev[Math.floor(prev.length / 2)];
   const when = /[dw]$/.test($("iv").value) ? `${t.slice(5, 10)} 봉 ${live ? "(진행 중)" : "(종가 = 다음날 오전 9시 가격)"}` : `${t.slice(5, 10)} ${t.slice(11, 16)}${live ? " (진행 중)" : ""}`;
-  $("ohlc").innerHTML = `<div><span><span class="t">${NAMES[coin] ?? coin} / TetherUS PERPETUAL CONTRACT · ${$("iv").selectedOptions[0].text.replace(/^D$/, "1D")} · Binance</span>`
+  $("ohlc").innerHTML = `<div><span><span class="t">${NAMES[coin] ?? coin} / TetherUS PERPETUAL CONTRACT · ${$("iv").selectedOptions[0].text.replace(/^([DWM])$/, "1$1")} · Binance</span>`
     + kv("O", fmt(b.open)) + kv("H", fmt(b.high)) + kv("L", fmt(b.low)) + kv("C", fmt(b.close))
     + `<span style="color:${col};margin-left:6px">${ch >= 0 ? "+" : "−"}${fmt(Math.abs(ch))} (${sgn(ch / ref * 100)})</span></span></div>`
     + (bar.v !== undefined ? `<div><span>Vol · ${coin} <span style="color:${bar.close >= bar.open ? UP : DN}">${big(bar.v)}</span></span></div>`
