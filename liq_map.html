@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>청산 지도</title>
+<style>
+  :root { --bg:#131722; --panel:#1b2030; --line:#2a3042; --text:#d1d4dc; --dim:#8a90a0; --up:#26a69a; --down:#ef5350; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px -apple-system, "Apple SD Gothic Neo", sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 14px; border-bottom:1px solid var(--line); }
+  header h1 { font-size:15px; margin:0 8px 0 0; }
+  select { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 7px; font:inherit; }
+  #price { font-size:22px; font-weight:700; margin-left:auto; font-variant-numeric:tabular-nums; }
+  #status { color:var(--dim); font-size:12px; }
+  main { display:flex; flex-wrap:wrap; }
+  #wrap { position:relative; flex:1; min-width:320px; height:62vh; min-height:360px; }
+  #cv { position:absolute; inset:0; width:100%; height:100%; }
+  #tip { position:absolute; pointer-events:none; background:rgba(19,23,34,.92); border:1px solid var(--line); border-radius:4px;
+         padding:3px 7px; font-size:12px; font-variant-numeric:tabular-nums; display:none; white-space:nowrap; }
+  aside { width:340px; flex-shrink:0; border-left:1px solid var(--line); padding:12px 16px; font-variant-numeric:tabular-nums; }
+  @media (max-width:760px) { aside { width:100%; border-left:0; border-top:1px solid var(--line); } }
+  h2 { font-size:12px; color:var(--dim); font-weight:600; margin:12px 0 6px; }
+  h2:first-child { margin-top:0; }
+  .row { display:grid; grid-template-columns:1fr auto 64px; gap:8px; padding:3px 0; font-size:13px; }
+  .row .d { text-align:right; color:var(--dim); }
+  .short { color:var(--down); } .long { color:var(--up); }
+  .now { border-top:1px dashed var(--line); border-bottom:1px dashed var(--line); margin:4px 0; padding:4px 0; font-weight:700; }
+  #live .row { font-size:12px; }
+  .note { font-size:12.5px; line-height:1.6; color:var(--dim); padding:14px 16px 28px; border-top:1px solid var(--line); max-width:1100px; }
+  .note b { color:var(--text); }
+  .note li { margin-bottom:4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>청산 지도 (추정)</h1>
+  <select id="sym"><option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option></select>
+  <select id="per"><option value="1h">1시간봉 · 약 20일</option><option value="15m">15분봉 · 약 5일</option></select>
+  <span id="status">불러오는 중…</span>
+  <span id="price">-</span>
+</header>
+<main>
+  <div id="wrap"><canvas id="cv"></canvas><div id="tip"></div></div>
+  <aside>
+    <h2>위쪽 숏 청산 구간 (가격이 오르면 강제 매수)</h2>
+    <div id="above"></div>
+    <div class="row now"><span>현재가</span><span id="nowp">-</span><span class="d"></span></div>
+    <h2>아래쪽 롱 청산 구간 (가격이 내리면 강제 매도)</h2>
+    <div id="below"></div>
+    <h2>요약</h2>
+    <div id="sum" style="font-size:13px;line-height:1.6"></div>
+    <h2>실제 청산 (바이낸스 실시간, 페이지 연 뒤부터)</h2>
+    <div id="live"><div class="d" style="color:var(--dim);font-size:12px">대기 중…</div></div>
+  </aside>
+</main>
+<div class="note">
+  <b>이게 뭔가.</b> 코인글래스·하이블록 같은 "청산 히트맵"을 바이낸스 공개 데이터로 직접 계산한 것. 거래소는 남의 포지션을 공개하지 않으므로 <b>실제 포지션 지도가 아니라 모델 추정</b>이다.
+  <ul>
+    <li><b>계산:</b> 봉마다 미결제약정(OI)이 늘어난 만큼 그 봉 평균가에 새 포지션이 생겼다고 본다. 롱·숏 비율은 그 봉의 시장가 매수 비중. 레버리지는 10배 30% · 25배 30% · 50배 25% · 100배 15%로 가정. 청산가 = 진입가 × (1 ∓ 1/레버리지 ± 유지증거금 0.4%).</li>
+    <li><b>지우기:</b> OI가 줄면 모든 구간을 같은 비율로 줄이고, 가격이 그 구간을 지나가면 "청산됨"으로 지운다. 그래서 밝게 남은 띠 = 아직 안 터진 추정 청산 물량.</li>
+    <li><b>밝을수록</b> 그 가격에 추정 청산액이 많다. 오른쪽 막대는 지금 시점의 단면.</li>
+    <li><b>"세력이 이걸 보고 사냥한다"는 근거는 약하다.</b> 청산이 강제 시장가 주문이라 연쇄 급변동을 만든다는 건 확실하지만, 마켓메이커가 일부러 노린다는 실증 연구는 못 찾았다(대부분 업체 홍보·트레이더 주장). 우리 연구(research_crowd_mechanism.md)에서도 근거 '약'으로 분류했다.</li>
+    <li><b>한계:</b> 바이낸스만 본다(다른 거래소 OI 없음). 레버리지 분포·비율 배분은 가정. 수치 절대값보다 <b>어디에 몰려 있나</b>만 참고. 매매 신호로 검증된 적 없다.</li>
+  </ul>
+</div>
+<script>
+const LEV = [[10, .30], [25, .30], [50, .25], [100, .15]];   // ponytail: fixed guess; no public data on Binance's real leverage mix
+const MMR = 0.004, NB = 260, API = "https://fapi.binance.com";
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+let M = null, ws = null, liveRows = [];
+
+const fmtP = p => p >= 1000 ? p.toLocaleString("en-US", {maximumFractionDigits: 0}) : p.toFixed(p >= 10 ? 2 : 4);
+const fmtU = u => u >= 1e9 ? (u / 1e9).toFixed(2) + "B" : u >= 1e6 ? (u / 1e6).toFixed(1) + "M" : (u / 1e3).toFixed(0) + "K";
+const getJ = u => fetch(API + u).then(r => { if (!r.ok) throw new Error(r.status + " " + u); return r.json(); });
+
+async function load() {
+  const sym = $("sym").value, per = $("per").value;
+  const [k, oi] = await Promise.all([
+    getJ(`/fapi/v1/klines?symbol=${sym}&interval=${per}&limit=500`),
+    getJ(`/futures/data/openInterestHist?symbol=${sym}&period=${per}&limit=500`)]);
+  const oiAt = new Map(oi.map(o => [o.timestamp, +o.sumOpenInterest]));
+  const bars = k.map(b => ({t: b[0], o: +b[1], h: +b[2], l: +b[3], c: +b[4], v: +b[5], tb: +b[9]}));
+  const lo = Math.min(...bars.map(b => b.l)) * 0.85, hi = Math.max(...bars.map(b => b.h)) * 1.15;
+  M = simulate(bars, oiAt, lo, hi);
+  M.sym = sym;
+  draw(); side();
+  $("status").textContent = `갱신 ${new Date().toLocaleTimeString("ko-KR")} · OI ${oi.length}개`;
+  $("price").textContent = fmtP(bars.at(-1).c);
+}
+
+// Walk bars in order: liquidate levels the bar's range crossed, then add/remove positions from the OI change.
+function simulate(bars, oiAt, lo, hi) {
+  const step = (hi - lo) / NB, bin = p => Math.floor((p - lo) / step);
+  const L = new Float64Array(NB), S = new Float64Array(NB), cols = [];
+  for (let i = 0; i < bars.length; i++) {
+    const b = bars[i];
+    for (let j = Math.max(0, bin(b.l)); j < NB && lo + j * step <= b.h + step; j++) {   // range [low, high] crossed
+      if (lo + (j + 1) * step > b.l) { L[j] = 0; S[j] = 0; }
+    }
+    const a = oiAt.get(b.t), z = bars[i + 1] && oiAt.get(bars[i + 1].t);
+    if (a != null && z != null) {
+      const d = z - a, p = (b.h + b.l + b.c) / 3;
+      if (d > 0) {
+        const buy = b.v ? b.tb / b.v : .5, usd = d * p;
+        for (const [lev, w] of LEV) {
+          const jl = bin(p * (1 - 1 / lev + MMR)), js = bin(p * (1 + 1 / lev - MMR));
+          if (jl >= 0 && jl < NB) L[jl] += usd * w * buy;
+          if (js >= 0 && js < NB) S[js] += usd * w * (1 - buy);
+        }
+      } else if (d < 0 && a > 0) {
+        const keep = 1 + d / a;
+        for (let j = 0; j < NB; j++) { L[j] *= keep; S[j] *= keep; }
+      }
+    }
+    const col = new Float32Array(NB);
+    for (let j = 0; j < NB; j++) col[j] = L[j] + S[j];
+    cols.push(col);
+  }
+  return {bars, cols, L, S, lo, step};
+}
+
+function color(x) {   // 0..1 -> dark navy, purple, teal, yellow
+  const st = [[19, 23, 34], [68, 1, 84], [33, 145, 140], [253, 231, 37]];
+  x = Math.max(0, Math.min(1, x)) * 3; const i = Math.min(2, Math.floor(x)), f = x - i, a = st[i], b = st[i + 1];
+  return `rgb(${a[0] + (b[0] - a[0]) * f | 0},${a[1] + (b[1] - a[1]) * f | 0},${a[2] + (b[2] - a[2]) * f | 0})`;
+}
+
+let geo = null;
+function draw() {
+  const dpr = devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = "#131722"; ctx.fillRect(0, 0, W, H);
+  const {bars, cols, L, S, lo, step} = M, n = bars.length;
+  const axisW = 64, profW = Math.min(110, W * .18), plotW = W - axisW - profW, padT = 10, padB = 22;
+  const last = bars.at(-1).c, vlo = Math.min(...bars.map(b => b.l)) * 0.94, vhi = Math.max(...bars.map(b => b.h)) * 1.06;
+  const y = p => padT + (vhi - p) / (vhi - vlo) * (H - padT - padB);
+  const j0 = Math.max(0, Math.floor((vlo - lo) / step)), j1 = Math.min(NB - 1, Math.ceil((vhi - lo) / step));
+  // scale: 98th percentile of visible cells, gamma .6 so small clusters still show
+  const vals = [];
+  for (const c of cols) for (let j = j0; j <= j1; j++) if (c[j] > 0) vals.push(c[j]);
+  vals.sort((a, b) => a - b);
+  const top = vals[Math.floor(vals.length * .98)] || 1;
+  const cw = plotW / n;
+  for (let i = 0; i < n; i++) for (let j = j0; j <= j1; j++) {
+    const v = cols[i][j]; if (!v) continue;
+    const ya = y(lo + (j + 1) * step), yb = y(lo + j * step);
+    ctx.fillStyle = color(Math.pow(v / top, .6)); ctx.fillRect(i * cw, ya, cw + .6, yb - ya + .6);
+  }
+  // candles
+  for (let i = 0; i < n; i++) {
+    const b = bars[i], x = i * cw + cw / 2, up = b.c >= b.o;
+    ctx.strokeStyle = ctx.fillStyle = up ? "#e8f5f3" : "#ff8a80";
+    ctx.beginPath(); ctx.moveTo(x, y(b.h)); ctx.lineTo(x, y(b.l)); ctx.lineWidth = 1; ctx.stroke();
+    if (cw > 3) ctx.fillRect(x - cw * .3, y(Math.max(b.o, b.c)), cw * .6, Math.max(1, Math.abs(y(b.o) - y(b.c))));
+  }
+  // current-price line
+  ctx.strokeStyle = "#ffffff"; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(0, y(last)); ctx.lineTo(plotW + profW, y(last)); ctx.stroke(); ctx.setLineDash([]);
+  // profile: longs (below) green, shorts (above) red
+  let pm = 0; for (let j = j0; j <= j1; j++) pm = Math.max(pm, L[j], S[j]);
+  for (let j = j0; j <= j1; j++) {
+    const ya = y(lo + (j + 1) * step), h = Math.max(1, y(lo + j * step) - ya - .5);
+    if (S[j]) { ctx.fillStyle = "rgba(239,83,80,.85)"; ctx.fillRect(plotW, ya, S[j] / pm * profW, h); }
+    if (L[j]) { ctx.fillStyle = "rgba(38,166,154,.85)"; ctx.fillRect(plotW, ya, L[j] / pm * profW, h); }
+  }
+  ctx.strokeStyle = "#2a3042"; ctx.beginPath(); ctx.moveTo(plotW + .5, 0); ctx.lineTo(plotW + .5, H); ctx.stroke();
+  // price axis
+  ctx.fillStyle = "#8a90a0"; ctx.font = "11px -apple-system, sans-serif"; ctx.textAlign = "left";
+  for (let k = 0; k <= 8; k++) { const p = vlo + (vhi - vlo) * k / 8; ctx.fillText(fmtP(p), plotW + profW + 6, y(p) + 4); }
+  ctx.fillStyle = "#fff"; ctx.fillText(fmtP(last), plotW + profW + 6, y(last) - 4);
+  // time axis
+  ctx.fillStyle = "#8a90a0"; ctx.textAlign = "center";
+  for (let i = 0; i < n; i += Math.ceil(n / 6)) {
+    const d = new Date(bars[i].t); ctx.fillText(`${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}시`, i * cw + cw / 2, H - 6);
+  }
+  geo = {y, vlo, vhi, padT, padB, H, plotW, profW, cw};
+}
+
+// Biggest clusters: merge bins into 0.5%-wide buckets, then take the top 4 on each side.
+function clusters(arr, last, side) {
+  const {lo, step} = M, out = new Map();
+  for (let j = 0; j < NB; j++) {
+    const p = lo + (j + .5) * step; if (!arr[j] || (side > 0 ? p <= last : p >= last)) continue;
+    const key = Math.round(Math.log(p / last) / Math.log(1.005));
+    const c = out.get(key) || {usd: 0, pw: 0}; c.usd += arr[j]; c.pw += p * arr[j]; out.set(key, c);
+  }
+  return [...out.values()].map(c => ({p: c.pw / c.usd, usd: c.usd})).sort((a, b) => b.usd - a.usd).slice(0, 4);
+}
+
+function side() {
+  const last = M.bars.at(-1).c, up = clusters(M.S, last, 1), dn = clusters(M.L, last, -1);
+  const row = (c, cls) => `<div class="row"><span class="${cls}">${fmtP(c.p)}</span><span>${fmtU(c.usd)}</span><span class="d">${((c.p / last - 1) * 100).toFixed(1)}%</span></div>`;
+  $("above").innerHTML = up.sort((a, b) => b.p - a.p).map(c => row(c, "short")).join("");
+  $("below").innerHTML = dn.sort((a, b) => b.p - a.p).map(c => row(c, "long")).join("");
+  $("nowp").textContent = fmtP(last);
+  const within = (arr, s) => { let u = 0; for (let j = 0; j < NB; j++) { const p = M.lo + (j + .5) * M.step, r = p / last - 1; if (s * r > 0 && Math.abs(r) <= .05) u += arr[j]; } return u; };
+  const su = within(M.S, 1), lu = within(M.L, -1), big = [...up, ...dn].sort((a, b) => b.usd - a.usd)[0];
+  $("sum").innerHTML = `±5% 안 추정 청산액: 위(숏) <b class="short">${fmtU(su)}</b> · 아래(롱) <b class="long">${fmtU(lu)}</b><br>` +
+    `${su > lu ? "위쪽 숏 물량이 더 두껍다 → 오르면 숏 강제매수가 상승을 키울 수 있는 구조" : "아래쪽 롱 물량이 더 두껍다 → 내리면 롱 강제매도가 하락을 키울 수 있는 구조"}<br>` +
+    (big ? `가장 큰 덩어리: <b>${fmtP(big.p)}</b> (${((big.p / last - 1) * 100).toFixed(1)}%, ${fmtU(big.usd)})` : "");
+}
+
+function live() {
+  if (ws) ws.close();
+  liveRows = []; $("live").innerHTML = `<div style="color:var(--dim);font-size:12px">대기 중…</div>`;
+  const sym = $("sym").value;
+  ws = new WebSocket("wss://fstream.binance.com/market/stream");   // per-symbol @forceOrder was silent in testing; filter the all-market feed
+  ws.onopen = () => ws.send(JSON.stringify({method: "SUBSCRIBE", params: ["!forceOrder@arr"], id: 1}));
+  ws.onmessage = e => {
+    const o = JSON.parse(e.data).data?.o; if (!o || o.s !== sym) return;
+    const p = +(o.ap || o.p), usd = p * +(o.z || o.q), longLiq = o.S === "SELL";
+    liveRows.unshift(`<div class="row"><span class="${longLiq ? "long" : "short"}">${longLiq ? "롱 청산" : "숏 청산"} ${fmtP(p)}</span><span>${fmtU(usd)}</span><span class="d">${new Date(o.T).toLocaleTimeString("ko-KR")}</span></div>`);
+    $("live").innerHTML = liveRows.slice(0, 12).join("");
+  };
+  ws.onclose = ev => { if (ev.target === ws) setTimeout(live, 5000); };
+}
+
+cv.addEventListener("mousemove", e => {
+  if (!geo) return;
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, tip = $("tip");
+  if (my < geo.padT || my > geo.H - geo.padB || mx > geo.plotW + geo.profW) { tip.style.display = "none"; return; }
+  const p = geo.vhi - (my - geo.padT) / (geo.H - geo.padT - geo.padB) * (geo.vhi - geo.vlo);
+  const j = Math.floor((p - M.lo) / M.step), i = Math.min(M.bars.length - 1, Math.floor(mx / geo.cw));
+  const v = mx < geo.plotW ? M.cols[i]?.[j] || 0 : (M.L[j] || 0) + (M.S[j] || 0);
+  const t = mx < geo.plotW ? new Date(M.bars[i].t).toLocaleString("ko-KR", {month: "numeric", day: "numeric", hour: "numeric"}) + " · " : "지금 · ";
+  tip.textContent = `${t}${fmtP(p)} · 추정 ${fmtU(v)}`;
+  tip.style.display = "block"; tip.style.left = Math.min(mx + 12, r.width - 200) + "px"; tip.style.top = (my + 12) + "px";
+});
+cv.addEventListener("mouseleave", () => $("tip").style.display = "none");
+
+const run = () => load().catch(e => $("status").textContent = "불러오기 실패: " + e.message);
+$("sym").onchange = () => { run(); live(); };
+$("per").onchange = run;
+addEventListener("resize", () => M && draw());
+run(); live(); setInterval(run, 60000);
+</script>
+</body>
+</html>
