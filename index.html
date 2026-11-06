@@ -6,27 +6,44 @@
 <title>선물 4시간 타점</title>
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.0.9/dist/lightweight-charts.standalone.production.js"></script>
 <style>
-  :root { --bg:#131722; --panel:#1b2030; --line:#2a3042; --text:#d1d4dc; --dim:#8a90a0; --up:#26a69a; --down:#ef5350; }
+  /* TradingView dark theme, values read from tradingview.com (2026-11): panels #000 on a #222 4px gutter, 38px bars */
+  :root { --bg:#000; --gut:#222; --panel:#131313; --line:#303030; --text:#dbdbdb; --tx2:#b8b8b8; --dim:#8c8c8c; --up:#089981; --down:#F23645; --acc:#2962ff; }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font:14px -apple-system, "Apple SD Gothic Neo", sans-serif; display:flex; flex-direction:column; height:100vh; }
-  header { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 14px; border-bottom:1px solid var(--line); }
-  select { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 7px; font:inherit; }
+  body { margin:0; background:var(--gut); color:var(--text); font:14px -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, "Apple SD Gothic Neo", sans-serif;
+         display:flex; flex-direction:column; gap:4px; height:100vh; }
+  header { display:flex; align-items:center; gap:2px; height:38px; flex-shrink:0; padding:0 4px; background:var(--bg); color:var(--tx2); }
+  header .sep, #bottom .sep { width:1px; height:20px; background:var(--line); margin:0 4px; }
+  select { appearance:none; background:transparent; color:var(--tx2); border:0; border-radius:4px; padding:6px 8px; font:inherit; cursor:pointer; }
+  header select:hover, #tools button:hover, #bottom button:hover { background:var(--gut); color:var(--text); }
+  #sym { background:var(--line); border-radius:14px; height:28px; padding:0 14px; font-weight:600; color:var(--text); }
+  #sym:hover { background:#3d3d3d !important; }
   label { color:var(--dim); font-size:12px; }
-  #price { font-size:24px; font-weight:700; margin-left:auto; font-variant-numeric:tabular-nums; }
-  #dot { width:9px; height:9px; border-radius:50%; background:var(--down); display:inline-block; margin-right:5px; }
-  main { display:flex; flex:1; min-height:0; }
+  #price { font-size:18px; font-weight:600; margin-left:auto; padding-right:8px; font-variant-numeric:tabular-nums; }
+  #dot { width:8px; height:8px; border-radius:50%; background:var(--down); display:inline-block; margin-right:5px; }
+  main { display:flex; flex:1; min-height:0; gap:4px; }
   #layers { display:flex; flex-wrap:wrap; gap:4px; } #layers .lay { padding:3px 8px; font-size:12px; } #layers .lay.off { opacity:.4; text-decoration:line-through; }
   button { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 9px; font:inherit; cursor:pointer; }
-  #ohlc { position:absolute; left:52px; top:8px; z-index:11; pointer-events:none; font-size:12px; background:rgba(19,23,34,.88);
-          padding:3px 8px; border-radius:4px; font-variant-numeric:tabular-nums; }
-  #tools { position:absolute; left:8px; top:8px; z-index:12; display:flex; flex-direction:column; gap:4px; }
-  #tools button { width:34px; height:30px; padding:0; font-size:13px; background:rgba(27,32,48,.92); }
-  #tools button.on { border-color:#4fc3f7; color:#4fc3f7; }
-  #chartWrap { position:relative; flex:1; min-width:0; }
+  /* legend: title 16px, values 13px coloured by the bar's change, half-black backing like TV */
+  #ohlc { position:absolute; left:8px; top:4px; z-index:11; pointer-events:none; font-size:13px; line-height:24px; font-variant-numeric:tabular-nums; color:var(--text); }
+  #ohlc { right:90px; } #ohlc > div { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #ohlc > div > span { background:rgba(0,0,0,.5); border-radius:4px; padding:0 3px; }
+  #bottom, #ranges { white-space:nowrap; } #ranges { display:flex; gap:2px; }
+  #ohlc .t { font-size:16px; } #ohlc .k { margin:0 2px 0 8px; } #ohlc .x { color:var(--dim); font-size:12px; }
+  #tools { width:52px; flex-shrink:0; background:var(--bg); display:flex; flex-direction:column; align-items:center; padding-top:4px; gap:2px; }
+  #tools button { width:44px; height:38px; padding:0; display:grid; place-items:center; background:transparent; border:0; border-radius:4px; color:var(--tx2); }
+  #tools button.on { background:var(--line); color:var(--text); }
+  #tools svg { width:28px; height:28px; fill:none; stroke:currentColor; stroke-width:1.2; }
+  #tools .sep { width:32px; height:1px; background:var(--line); margin:4px 0; }
+  .chartCol { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--bg); }
+  #chartWrap { position:relative; flex:1; min-height:0; }
   #chart { position:absolute; inset:0; }
   #overlay { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:10; }
+  #bottom { height:38px; flex-shrink:0; display:flex; align-items:center; gap:2px; padding:0 4px; border-top:1px solid var(--gut); }
+  #bottom button { background:transparent; border:0; border-radius:4px; color:var(--tx2); padding:4px 7px; font-size:13px; }
+  #bottom button.on { color:var(--acc); }
+  #clock { margin-left:auto; padding:0 8px; font-size:13px; color:var(--tx2); font-variant-numeric:tabular-nums; }
   /* trade ticket: one column, no boxes; the price ladder is the one strong element */
-  aside { width:320px; flex-shrink:0; background:var(--bg); border-left:1px solid var(--line); padding:14px 16px 12px; overflow:auto; }
+  aside { width:320px; flex-shrink:0; background:var(--bg); padding:14px 16px 12px; overflow:auto; }
   .tk-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
   .tk-head .t { font-size:13px; color:var(--dim); } .tk-head .t b { color:var(--text); font-size:15px; margin-right:3px; }
   .tk-head select { padding:3px 6px; font-size:12px; }
@@ -49,7 +66,7 @@
   .lv .nm { font-size:13px; font-weight:600; } .lv .nm small, .lv .px small { display:block; font-size:11px; color:var(--dim); font-weight:400; }
   .lv .px { text-align:right; font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; }
   .lv .pl { text-align:right; font-size:13px; font-weight:700; color:var(--c); font-variant-numeric:tabular-nums; }
-  .lv.gain { --rail:rgba(38,166,154,.35); } .lv.loss { --rail:rgba(239,83,80,.35); }
+  .lv.gain { --rail:rgba(8,153,129,.35); } .lv.loss { --rail:rgba(242,54,69,.35); }
   .lv.tp { --c:var(--up); } .lv.be { --c:#7fcfc4; } .lv.stop { --c:var(--down); }
   .lv.off { opacity:.45; }
   .lv.entry { --c:#2962ff; background:rgba(41,98,255,.09); border-radius:8px; }
@@ -63,29 +80,37 @@
   .cr .vl { color:var(--dim); font-variant-numeric:tabular-nums; text-align:right; } .cr.no .vl { color:#ff8a87; }
   .tk-foot { margin-top:14px; font-size:10.5px; color:#5d6475; }
   .dim { color:var(--dim); font-size:12px; }
-  @media (max-width: 760px) { body { height:auto; } main { flex-direction:column; height:auto; } #chartWrap { flex:none; height:65vh; } aside { width:100%; } }
+  @media (max-width: 760px) { body { height:auto; } main { flex-direction:column; height:auto; } .chartCol { flex:none; height:70vh; } aside { width:100%; }
+    #tools { width:100%; flex-direction:row; padding:0 4px; overflow-x:auto; } #tools .sep { width:1px; height:20px; } #dot + #upd, #bottom .sep { display:none; }
+    #bottom { overflow-x:auto; } #bottom button { padding:4px 5px; } }
 </style>
 </head>
 <body>
 <header>
-  <select id="sym"><option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option></select>
-  <label>봉 <select id="iv"><option value="1h">1시간</option><option value="4h" selected>4시간</option><option value="1d">1일</option></select></label>
-  <label>가격축 <select id="scale"><option value="0" selected>일반</option><option value="1">로그</option></select></label>
+  <select id="sym" title="심볼"><option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option></select>
+  <span class="sep"></span>
+  <select id="iv" title="봉"><option value="1h">1h</option><option value="4h" selected>4h</option><option value="1d">D</option></select>
+  <select id="scale" hidden><option value="0" selected>일반</option><option value="1">로그</option></select>
+  <span class="sep"></span>
   <span class="dim"><span id="dot"></span><span id="upd">연결 중…</span></span>
-  <button id="fitBtn" title="세로 범위를 캔들에 다시 맞춤">맞춤</button>
   <div id="price">-</div>
 </header>
 <main>
-  <div id="chartWrap"><div id="chart"></div><canvas id="overlay"></canvas><div id="ohlc"></div>
-    <div id="tools">
-      <button data-tool="" class="on" title="이동 (Esc)">✥</button>
-      <button data-tool="h" title="수평선: 한 번 클릭">─</button>
-      <button data-tool="line" title="추세선: 시작점 클릭 → 끝점 클릭">╱</button>
-      <button data-tool="rect" title="박스: 한쪽 모서리 클릭 → 반대쪽 모서리 클릭">▭</button>
-      <button data-tool="fib" title="피보나치 되돌림: 시작점 클릭 → 끝점 클릭">Fib</button>
-      <button data-tool="del" title="지우개: 그린 것을 클릭하면 삭제">⌫</button>
-      <button id="clearDraw" title="그린 것 전부 삭제">🗑</button>
-    </div></div>
+  <div id="tools">
+    <button data-tool="" class="on" title="십자선 (Esc)"><svg viewBox="0 0 28 28"><path d="M14 5v7M14 16v7M5 14h7M16 14h7"/></svg></button>
+    <button data-tool="h" title="수평선: 한 번 클릭"><svg viewBox="0 0 28 28"><path d="M4 14h20"/><circle cx="14" cy="14" r="2"/></svg></button>
+    <button data-tool="line" title="추세선: 시작점 클릭 → 끝점 클릭"><svg viewBox="0 0 28 28"><path d="M7.5 20.5l13-13"/><circle cx="6" cy="22" r="2"/><circle cx="22" cy="6" r="2"/></svg></button>
+    <button data-tool="rect" title="박스: 한쪽 모서리 클릭 → 반대쪽 모서리 클릭"><svg viewBox="0 0 28 28"><rect x="6" y="8" width="16" height="12"/></svg></button>
+    <button data-tool="fib" title="피보나치 되돌림: 시작점 클릭 → 끝점 클릭"><svg viewBox="0 0 28 28"><path d="M5 6h18M5 11h18M5 16h18M5 22h18"/></svg></button>
+    <span class="sep"></span>
+    <button data-tool="del" title="지우개: 그린 것을 클릭하면 삭제"><svg viewBox="0 0 28 28"><path d="M11 22h12M8 19l9.5-9.5 5 5L17 20H9z"/></svg></button>
+    <button id="clearDraw" title="그린 것 전부 삭제"><svg viewBox="0 0 28 28"><path d="M8 9h12M12 9V6h4v3M9.5 9l1 14h7l1-14"/></svg></button>
+  </div>
+  <div class="chartCol">
+    <div id="chartWrap"><div id="chart"></div><canvas id="overlay"></canvas><div id="ohlc"></div></div>
+    <div id="bottom"><span id="ranges"></span><span class="sep"></span><span id="clock"></span><span class="sep"></span>
+      <button id="logBtn" title="로그 가격축">log</button><button id="fitBtn" title="세로 범위를 캔들에 자동 맞춤">auto</button></div>
+  </div>
   <aside>
     <div class="tk-head"><div class="t"><b id="ckCoin"></b>4시간 타점</div>
       <div style="display:flex;gap:6px"><label class="field"><span>지갑 USDT</span><input id="acct" type="number" min="1" step="any" style="width:74px"></label>
@@ -99,7 +124,7 @@
     <div class="crit-h">화면에 보이기 <span class="dim" style="font-size:11px">누르면 켜기/끄기</span></div>
     <div id="layers"></div>
     <div class="lv-foot" style="margin:8px 0 0;line-height:1.7">
-      <b style="color:#26a69a">▲ 롱</b> 롱 진입 (숏 들고 있었으면 정리하고 롱) · <b style="color:#ef5350">▼ 숏</b> 숏 진입<br>
+      <b style="color:#089981">▲ 롱</b> 롱 진입 (숏 들고 있었으면 정리하고 롱) · <b style="color:#F23645">▼ 숏</b> 숏 진입<br>
       <b style="color:#8a90a0">● 롱 끝 / 숏 끝</b> 포지션 정리하고 현금으로 쉬기. Squeeze 지표(상승횡보)만 이렇게 쉬고, 장세가 바뀌어 지표가 바뀔 때도 생김<br>
       <b style="color:#ce93d8">보라선</b> 200일선: 가격이 위면 상승장, 아래면 하락장 (장세 판정)<br>
       화살표는 4시간 마감 다음 봉에 찍힘 = 그 봉 시작가로 매매. 차트가 좁으면 글자 없이 점만 보임</div>
@@ -116,8 +141,12 @@ const api = () => "https://fapi.binance.com/fapi/v1/klines";
 // USDⓈ-M market streams live under /market/ws/ (the old /ws/ path connects but sends nothing)
 const wsUrl = () => "wss://fstream.binance.com/market/ws/" + $("sym").value.toLowerCase() + "@kline_" + $("iv").value;
 // q = traded USDT, tb = the part bought at market (taker buy); the rest was sold at market
-const toBar = k => ({ time: k[0] / 1000 + TZ, open: +k[1], high: +k[2], low: +k[3], close: +k[4], q: +k[7], tb: +k[10] });
-const fmt = v => v.toLocaleString("en-US", { maximumFractionDigits: v < 1000 ? 2 : 0 });
+// v = traded coins (TradingView's "Vol · BTC")
+const toBar = k => ({ time: k[0] / 1000 + TZ, open: +k[1], high: +k[2], low: +k[3], close: +k[4], v: +k[5], q: +k[7], tb: +k[10] });
+const DEC = { BTCUSDT: 1, ETHUSDT: 2, SOLUSDT: 2 };          // exchange tick size, as TradingView prints prices
+const fmt = v => { const d = Math.abs(v) >= 1 || !v ? DEC[$("sym").value] ?? 2 : 4;
+  return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); };
+const UP = "#089981", DN = "#F23645";
 const pct = (a, b) => (a / b - 1) * 100;
 const sgn = v => (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
 const nowPrice = () => livePrice ?? (data.length ? data[data.length - 1].close : null);
@@ -236,16 +265,21 @@ function chartClick(x, yy) {                               // a click (not a dra
 let hoverBar = null;
 function showOHLC() {
   const b = hoverBar || data[data.length - 1]; if (!b) return;
-  const t = new Date(b.time * 1000).toISOString(), live = b.time === data[data.length - 1].time;
+  const i = data.findIndex(x => x.time === b.time), bar = data[i] || b, live = i === data.length - 1;
+  // TradingView legend: name · interval · exchange, OHLC coloured by the change from the previous close, then Vol · coin
+  const ref = i > 0 ? data[i - 1].close : b.open, ch = b.close - ref, col = ch >= 0 ? UP : DN, coin = $("sym").value.replace("USDT", "");
+  const kv = (k, v) => `<span class="k">${k}</span><span style="color:${col}">${v}</span>`;
+  const big = v => v >= 1e9 ? (v / 1e9).toFixed(2) + " B" : v >= 1e6 ? (v / 1e6).toFixed(2) + " M" : v >= 1e3 ? (v / 1e3).toFixed(2) + " K" : v.toFixed(2);
+  // extra line kept from before: volume vs the median of the 30 bars before it, and the share bought at market
+  const t = new Date(b.time * 1000).toISOString(), prev = data.slice(Math.max(0, i - 30), i).map(x => x.q).sort((x, y) => x - y), med = prev[Math.floor(prev.length / 2)];
   const when = /[dw]$/.test($("iv").value) ? `${t.slice(5, 10)} 봉 ${live ? "(진행 중)" : "(종가 = 다음날 오전 9시 가격)"}` : `${t.slice(5, 10)} ${t.slice(11, 16)}${live ? " (진행 중)" : ""}`;
-  const col = b.close >= b.open ? "#26a69a" : "#ef5350";
-  // volume vs the median of the 30 bars before it, and the share bought at market
-  const i = data.findIndex(x => x.time === b.time), bar = data[i], prev = data.slice(Math.max(0, i - 30), i).map(x => x.q).sort((x, y) => x - y);
-  const med = prev[Math.floor(prev.length / 2)], usd = v => v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : (v / 1e6).toFixed(1) + "M";
-  $("ohlc").innerHTML = `${when} · 시가 ${fmt(b.open)} · 고가 ${fmt(b.high)} · 저가 ${fmt(b.low)} · `
-    + `<b style="color:${col}">${live ? "현재" : "종가"} ${fmt(b.close)}</b> <span class="dim">(${sgn(pct(b.close, b.open))})</span>`
-    + (bar ? ` · 거래량 ${usd(bar.q)} USDT${med && !live ? ` <b>(평소의 ${(bar.q / med).toFixed(1)}배)</b>` : ""} · 시장가 매수 ${(bar.tb / bar.q * 100).toFixed(0)}%` : "");
+  $("ohlc").innerHTML = `<div><span><span class="t">${NAMES[coin] ?? coin} / TetherUS PERPETUAL CONTRACT · ${$("iv").selectedOptions[0].text.replace(/^D$/, "1D")} · Binance</span>`
+    + kv("O", fmt(b.open)) + kv("H", fmt(b.high)) + kv("L", fmt(b.low)) + kv("C", fmt(b.close))
+    + `<span style="color:${col};margin-left:6px">${ch >= 0 ? "+" : "−"}${fmt(Math.abs(ch))} (${sgn(ch / ref * 100)})</span></span></div>`
+    + (bar.v !== undefined ? `<div><span>Vol · ${coin} <span style="color:${bar.close >= bar.open ? UP : DN}">${big(bar.v)}</span></span></div>`
+      + `<div><span class="x">${when} · ${big(bar.q)} USDT${med && !live ? ` (평소의 ${(bar.q / med).toFixed(1)}배)` : ""} · 시장가 매수 ${(bar.tb / bar.q * 100).toFixed(0)}%</span></div>` : "");
 }
+const NAMES = { BTC: "Bitcoin", ETH: "Ethereum", SOL: "Solana" };
 
 function signal() {                                     // OHLC line + the 4h card
   if (!hoverBar) showOHLC();
@@ -364,28 +398,24 @@ function drawInd() {
     x.setData(pts); indS.push(x); };
   if (name === "SuperTrend") {                          // the active band: below price while long, above while short
     add("LineSeries", { lineWidth: 2, title: "SuperTrend", autoscaleInfoProvider: () => null },
-      t.map((x, i) => st[i] > 0 && ok(st.fl[i]) ? { time: x, value: st.fl[i], color: "#26a69a" } : st[i] < 0 && ok(st.fu[i]) ? { time: x, value: st.fu[i], color: "#ef5350" } : { time: x }), 0);
+      t.map((x, i) => st[i] > 0 && ok(st.fl[i]) ? { time: x, value: st.fl[i], color: "#089981" } : st[i] < 0 && ok(st.fu[i]) ? { time: x, value: st.fu[i], color: "#F23645" } : { time: x }), 0);
     return fitPanes();
   }
-  // price / indicator / volume: the first indicator series joins the volume pane, then volume moves to a new pane below
-  // (pane.moveTo asserts while a fresh chart is not laid out yet; series.moveToPane does not)
-  const first = (type, opt, pts) => { add(type, opt, pts, 1); volume.moveToPane(chart.panes().length); };
+  // the indicator gets its own pane under the price pane (volume is an overlay inside the price pane, as on TradingView)
+  const first = (type, opt, pts) => add(type, opt, pts, 1);
   if (name === "VW-MACD") {
-    first("HistogramSeries", {}, t.map((x, i) => ok(st.m[i]) && ok(st.sg[i]) ? { time: x, value: st.m[i] - st.sg[i], color: st.m[i] >= st.sg[i] ? "rgba(38,166,154,.5)" : "rgba(239,83,80,.5)" } : { time: x }));
+    first("HistogramSeries", {}, t.map((x, i) => ok(st.m[i]) && ok(st.sg[i]) ? { time: x, value: st.m[i] - st.sg[i], color: st.m[i] >= st.sg[i] ? "rgba(8,153,129,.5)" : "rgba(242,54,69,.5)" } : { time: x }));
     add("LineSeries", { color: "#2962ff", lineWidth: 1, title: "VW-MACD" }, t.map((x, i) => ok(st.m[i]) ? { time: x, value: st.m[i] } : { time: x }), 1);
     add("LineSeries", { color: "#ff9800", lineWidth: 1, title: "신호선" }, t.map((x, i) => ok(st.sg[i]) ? { time: x, value: st.sg[i] } : { time: x }), 1);
   } else {                                              // momentum bars; dots on zero: orange = squeezed, grey = released
     first("HistogramSeries", { title: "Squeeze" }, t.map((x, i) => ok(st.mom[i]) ? { time: x, value: st.mom[i],
-      color: st.mom[i] >= 0 ? (st.mom[i] >= st.mom[i - 1] ? "#26a69a" : "rgba(38,166,154,.45)") : (st.mom[i] <= st.mom[i - 1] ? "#ef5350" : "rgba(239,83,80,.45)") } : { time: x }));
+      color: st.mom[i] >= 0 ? (st.mom[i] >= st.mom[i - 1] ? "#089981" : "rgba(8,153,129,.45)") : (st.mom[i] <= st.mom[i - 1] ? "#F23645" : "rgba(242,54,69,.45)") } : { time: x }));
     add("LineSeries", { lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2 }, t.map((x, i) => ({ time: x, value: 0, color: st.on[i] ? "#f0a202" : "#5d6475" })), 1);
   }
   fitPanes();
 }
-function fitPanes() {                                   // screen split: price 65%, indicator 22%, volume 13% (or a sliver when hidden)
-  const ps = chart.panes(), vol = volume.getPane();
-  ps[0].setStretchFactor(5);
-  ps.forEach(p => { if (p !== ps[0] && p !== vol) p.setStretchFactor(1.7); });
-  vol.setStretchFactor(show.vol ? 1 : .05);
+function fitPanes() {                                   // screen split: price 75%, indicator 25%
+  chart.panes().forEach((p, i) => p.setStretchFactor(i ? 1.7 : 5));
 }
 function h4Marks() {                                    // where the card's state changed: arrow on the bar it is traded at
   const d = closedDays(), src = src4h(); if (d.length < 220 || src.length < 100) return [];
@@ -396,7 +426,7 @@ function h4Marks() {                                    // where the card's stat
     if (src[i].time - TZ + 4 * 3600 > now) break;
     const c = byDay.get(Math.floor((src[i].time - TZ) / 86400) * 86400 - 86400), p = c === undefined || c < 0 ? 0 : sts[PICKS[c]][i];
     const when = src[i].time + 4 * 3600;                // traded at the next 4h open (a 1h bar too)
-    if (prev !== null && p !== prev && when <= lastT) ms.push({ time: when, position: p > 0 || prev < 0 ? "belowBar" : "aboveBar", color: p > 0 ? "#26a69a" : p < 0 ? "#ef5350" : "#8a90a0",
+    if (prev !== null && p !== prev && when <= lastT) ms.push({ time: when, position: p > 0 || prev < 0 ? "belowBar" : "aboveBar", color: p > 0 ? "#089981" : p < 0 ? "#F23645" : "#8a90a0",
       shape: p > 0 ? "arrowUp" : p < 0 ? "arrowDown" : "circle", text: p > 0 ? "롱" : p < 0 ? "숏" : prev > 0 ? "롱 끝" : "숏 끝" });
     prev = p;
   }
@@ -409,7 +439,7 @@ async function loadH4() {                               // closed 4h bars only
 }
 setInterval(() => { if (h4.length && Date.now() / 1000 >= h4[h4.length - 1].time - TZ + 8 * 3600 + 10) loadH4(); }, 60000);
 function check(live) {
-  const sym = $("sym").value, coin = sym.replace("USDT", ""), G = "#26a69a", R = "#ef5350", D = "#8a90a0";
+  const sym = $("sym").value, coin = sym.replace("USDT", ""), G = "#089981", R = "#F23645", D = "#8a90a0";
   $("ckCoin").textContent = coin;
   const rg = regimeNow();
   if (!rg || h4.length < 300) { $("ckDir").innerHTML = `<div class="dim">4시간봉 불러오는 중</div>`; ["ckCrit", "ckOrder", "ckLadder"].forEach(id => $(id).innerHTML = ""); return; }
@@ -486,36 +516,58 @@ function draw(panels = true) {
   const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
   // the user's drawings, kept inside the price pane
   if (show.draw) drawShapes(g, v => series.priceToCoordinate(v), chart.timeScale().width(), chart.panes()[0].getHeight() + 28);
-  if (panels) signal();
+  drawCountdown(g, W);
+  $("logBtn").classList.toggle("on", $("scale").value === "1");
+  $("fitBtn").classList.toggle("on", chart.priceScale("right").options().autoScale);
+  if (panels) { signal(); $("clock").textContent = new Date().toLocaleTimeString("en-GB") + ` (UTC${TZ >= 0 ? "+" : "−"}${Math.abs(TZ / 3600)})`; }
+}
+// TradingView's bar-close countdown: a box under the last-price label, same colour
+const IV_SEC = { "1h": 3600, "4h": 14400, "1d": 86400 };
+function drawCountdown(g, W) {
+  const last = data[data.length - 1], y = series.priceToCoordinate(last.close), x = chart.timeScale().width();
+  if (y === null || y < 0 || y > chart.panes()[0].getHeight()) return;
+  const s = Math.max(0, Math.floor(last.time - TZ + IV_SEC[$("iv").value] - Date.now() / 1000)), p = n => String(n).padStart(2, "0");
+  const txt = (s >= 86400 ? Math.floor(s / 86400) + "d " : "") + (s >= 3600 ? p(Math.floor(s / 3600) % 24) + ":" : "") + p(Math.floor(s / 60) % 60) + ":" + p(s % 60);
+  g.fillStyle = last.close >= last.open ? UP : DN; g.fillRect(x, Math.round(y) + 10, W - x, 16);
+  g.fillStyle = "#fff"; g.font = "12px -apple-system, BlinkMacSystemFont, sans-serif"; g.textBaseline = "middle"; g.fillText(txt, x + 8, Math.round(y) + 18);
+  g.textBaseline = "alphabetic";
 }
 
 function initChart() {
   if (chart) chart.remove();
   allMarks = []; markKey = null; indS = [];
+  // every value below is TradingView's own dark-theme chart property (paneProperties / scalesProperties / candleStyle)
+  const L = LightweightCharts.LineStyle, intra = /[mh]$/.test($("iv").value);
+  const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const cross = { color: "#9c9c9c", style: L.Dashed, width: 1, labelBackgroundColor: "#363636" };
   chart = LightweightCharts.createChart($("chart"), {
     autoSize: true,
-    grid: { vertLines: { color: "#1c2130" }, horzLines: { color: "#1c2130" } },
-    rightPriceScale: { borderColor: "#2a3042", scaleMargins: { top: .06, bottom: .05 }, mode: +$("scale").value },
-    layout: { background: { color: "#131722" }, textColor: "#d1d4dc", fontSize: 12, panes: { separatorColor: "#2a3042", separatorHoverColor: "rgba(41,98,255,.25)" } },
-    timeScale: { borderColor: "#2a3042", timeVisible: /[mh]$/.test($("iv").value), rightOffset: 6, barSpacing: 8 },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-    localization: { priceFormatter: v => { const a = Math.abs(v), d = a >= 1000 ? 0 : a >= 10 ? 2 : a >= .1 ? 4 : 6;
-      return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); } },
+    grid: { vertLines: { color: "rgba(242,242,242,.2)", style: L.Dotted }, horzLines: { color: "rgba(242,242,242,.2)", style: L.Dotted } },
+    rightPriceScale: { borderVisible: false, scaleMargins: { top: .1, bottom: .08 }, mode: +$("scale").value },
+    layout: { background: { color: "#000000" }, textColor: "#b8b8b8", fontSize: 12, fontFamily: '-apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
+      panes: { separatorColor: "#222222", separatorHoverColor: "rgba(41,98,255,.25)" } },
+    timeScale: { borderVisible: false, timeVisible: intra, rightOffset: 10, barSpacing: 6 },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: cross, horzLine: cross },
+    localization: { locale: "en-US", priceFormatter: fmt,
+      timeFormatter: t => { const d = new Date(t * 1000), s = `${DAY[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]} '${String(d.getUTCFullYear()).slice(2)}`;
+        return intra ? s + "   " + d.toISOString().slice(11, 16) : s; } },   // bar times are already shifted to local time
   });
   series = chart.addSeries(LightweightCharts.CandlestickSeries, {
-    upColor: "#26a69a", downColor: "#ef5350", borderVisible: false, wickUpColor: "#26a69a", wickDownColor: "#ef5350", priceLineColor: "#2962ff",
+    upColor: UP, downColor: DN, borderUpColor: UP, borderDownColor: DN, wickUpColor: UP, wickDownColor: DN, priceLineStyle: L.Dotted,
   });
   const maOpt = { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: () => null };
   marksApi = LightweightCharts.createSeriesMarkers(series, []);
   ma200 = chart.addSeries(LightweightCharts.LineSeries, { ...maOpt, color: "#ce93d8", lineWidth: 2 });
-  volume = chart.addSeries(LightweightCharts.HistogramSeries, { priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false }, 1);
+  // TradingView's Volume: an overlay on the bottom 20% of the price pane
+  volume = chart.addSeries(LightweightCharts.HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "vol", priceLineVisible: false, lastValueVisible: false });
+  volume.priceScale().applyOptions({ scaleMargins: { top: .8, bottom: 0 } });
   fitPanes();
   chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
   chart.subscribeCrosshairMove(prm => { hoverBar = (prm.time !== undefined && prm.seriesData.get(series)) || null; showOHLC(); dirty = true; });
 }
 
 let volume = null, marksApi = null;
-const volBar = b => ({ time: b.time, value: b.q, color: b.close >= b.open ? "rgba(38,166,154,.45)" : "rgba(239,83,80,.45)" });
+const volBar = b => ({ time: b.time, value: b.v, color: b.close >= b.open ? "rgba(38,166,154,.5)" : "rgba(239,83,80,.5)" });   // TV's volume palette, 50%
 function setAll() { series.setData(data); volume.setData(data.map(volBar)); markers(); updateMAs(); applyLayers(); }
 
 async function onRange(r) {
@@ -537,15 +589,15 @@ async function onRange(r) {
 function connect() {
   if (ws) { ws.onclose = null; ws.close(); }
   ws = new WebSocket(wsUrl());
-  ws.onopen = () => $("dot").style.background = "#26a69a";
-  ws.onclose = () => { $("dot").style.background = "#ef5350"; setTimeout(connect, 3000); };
+  ws.onopen = () => $("dot").style.background = "#089981";
+  ws.onclose = () => { $("dot").style.background = "#F23645"; setTimeout(connect, 3000); };
   ws.onmessage = e => {
     const k = JSON.parse(e.data).k; if (!k) return;
     const bar = toBar([k.t, k.o, k.h, k.l, k.c, k.v, 0, k.q, 0, 0, k.Q]), last = data[data.length - 1];
     if (last && bar.time === last.time) data[data.length - 1] = bar; else if (!last || bar.time > last.time) { data.push(bar); if ($("iv").value === "4h") { drawInd(); markers(); } }
     series.update(bar); volume.update(volBar(bar));
     const prev = livePrice; livePrice = bar.close;
-    $("price").textContent = fmt(livePrice); $("price").style.color = prev === null || livePrice >= prev ? "#26a69a" : "#ef5350";
+    $("price").textContent = fmt(livePrice); $("price").style.color = prev === null || livePrice >= prev ? "#089981" : "#F23645";
     $("upd").textContent = "실시간 " + new Date().toLocaleTimeString("ko-KR");
     dirty = true;
   };
@@ -586,6 +638,18 @@ const viewSig = () => { const r = chart.timeScale().getVisibleLogicalRange(), re
   requestAnimationFrame(loop);
 })();
 setInterval(() => dirty = true, 500);
+$("logBtn").addEventListener("click", () => { $("scale").value = $("scale").value === "1" ? "0" : "1"; $("scale").dispatchEvent(new Event("change")); });
+// TradingView's date-range buttons: show that much time up to the last bar (only what is loaded; scrolling left loads more)
+const RANGES = [["5D", 5], ["1M", 30], ["3M", 91], ["6M", 182], ["YTD", "ytd"], ["1Y", 365], ["5Y", 1826], ["All", 0]];
+$("ranges").innerHTML = RANGES.map(([n]) => `<button data-r="${n}">${n}</button>`).join("");
+$("ranges").addEventListener("click", e => {
+  const d = new Map(RANGES).get(e.target.dataset.r); if (d === undefined || !data.length) return;
+  if (!d) return chart.timeScale().fitContent();
+  const to = data[data.length - 1].time, from = d === "ytd" ? Date.UTC(new Date().getUTCFullYear(), 0, 1) / 1000 + TZ : to - d * 86400;
+  // before the first loaded bar = a negative logical index; onRange then loads the older bars into that space
+  const l = from >= data[0].time ? data.findIndex(b => b.time >= from) : (from - data[0].time) / barSec();
+  chart.timeScale().setVisibleLogicalRange({ from: l, to: data.length - 1 + 10 });
+});
 $("fitBtn").addEventListener("click", () => { chart.priceScale("right").applyOptions({ autoScale: true }); chart.timeScale().scrollToRealTime(); });
 // free drag in every direction: the chart library only scrolls the price axis while auto-fit is off, so switch it off when a
 // press starts and switch it back on if the drag turned out to be horizontal (맞춤 or a double-click on the price axis re-fits)
