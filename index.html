@@ -3,1021 +3,269 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>선물 4시간 타점</title>
+<title>BTC 지지·저항</title>
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.0.9/dist/lightweight-charts.standalone.production.js"></script>
 <style>
-  /* TradingView dark theme, values read from tradingview.com (2026-11): panels #000 on a #222 4px gutter, 38px bars */
-  :root { --bg:#000; --gut:#222; --panel:#131313; --line:#303030; --text:#dbdbdb; --tx2:#b8b8b8; --dim:#8c8c8c; --up:#089981; --down:#F23645; --acc:#2962ff; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--gut); color:var(--text); font:14px -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, "Apple SD Gothic Neo", sans-serif;
-         display:flex; flex-direction:column; gap:4px; height:100vh; }
-  header { display:flex; align-items:center; gap:2px; height:38px; flex-shrink:0; padding:0 4px; background:var(--bg); color:var(--tx2); }
-  header .sep, #bottom .sep { width:1px; height:20px; background:var(--line); margin:0 4px; }
-  select { appearance:none; background:transparent; color:var(--tx2); border:0; border-radius:4px; padding:6px 8px; font:inherit; cursor:pointer; }
-  header select:hover, #tools button:hover, #bottom button:hover { background:var(--gut); color:var(--text); }
-  #sym { background:var(--line); border-radius:14px; height:28px; padding:0 14px; font-weight:600; color:var(--text); }
-  #sym:hover { background:#3d3d3d !important; }
-  label { color:var(--dim); font-size:12px; }
-  #price { font-size:18px; font-weight:600; margin-left:auto; padding-right:8px; font-variant-numeric:tabular-nums; }
-  #dot { width:8px; height:8px; border-radius:50%; background:var(--down); display:inline-block; margin-right:5px; }
-  main { display:flex; flex:1; min-height:0; gap:4px; }
-  #layers { display:flex; flex-wrap:wrap; gap:4px; } #layers .lay { padding:3px 8px; font-size:12px; } #layers .lay.off { opacity:.4; text-decoration:line-through; }
-  button { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 9px; font:inherit; cursor:pointer; }
-  /* legend: title 16px, values 13px coloured by the bar's change, half-black backing like TV */
-  #ohlc { position:absolute; left:8px; top:4px; z-index:11; pointer-events:none; font-size:13px; line-height:24px; font-variant-numeric:tabular-nums; color:var(--text); }
-  #ohlc { right:90px; } #ohlc > div { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  #ohlc > div > span { background:rgba(0,0,0,.5); border-radius:4px; padding:0 3px; }
-  #bottom, #ranges { white-space:nowrap; } #ranges { display:flex; gap:2px; }
-  #ohlc .t { font-size:16px; } #ohlc .k { margin:0 2px 0 8px; } #ohlc .x { color:var(--dim); font-size:12px; }
-  #tools { width:52px; flex-shrink:0; background:var(--bg); display:flex; flex-direction:column; align-items:center; padding-top:4px; gap:2px; }
-  #tools button { width:44px; height:38px; padding:0; display:grid; place-items:center; background:transparent; border:0; border-radius:4px; color:var(--tx2); }
-  #tools button.on { background:var(--line); color:var(--text); }
-  #tools svg { width:28px; height:28px; fill:none; stroke:currentColor; stroke-width:1.2; }
-  #tools .sep { width:32px; height:1px; background:var(--line); margin:4px 0; }
-  .chartCol { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--bg); }
-  #chartWrap { position:relative; flex:1; min-height:0; background:#000; }
-  #chart, #heat { position:absolute; inset:0; }
-  #heat { width:100%; height:100%; pointer-events:none; }
-  #overlay { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:10; }
-  #bottom { height:38px; flex-shrink:0; display:flex; align-items:center; gap:2px; padding:0 4px; border-top:1px solid var(--gut); }
-  #bottom button { background:transparent; border:0; border-radius:4px; color:var(--tx2); padding:4px 7px; font-size:13px; }
-  #bottom button.on { color:var(--acc); }
-  #clock { margin-left:auto; padding:0 8px; font-size:13px; color:var(--tx2); font-variant-numeric:tabular-nums; }
-  #chartWrap[data-cur="pointer"] #chart canvas { cursor:pointer !important; } #chartWrap[data-cur="move"] #chart canvas { cursor:move !important; }
-  #chartWrap[data-cur="crosshair"] #chart canvas { cursor:crosshair !important; }
-  #toRT { position:absolute; z-index:12; width:26px; height:26px; padding:0; border:0; border-radius:50%; background:#2e2e2e; color:var(--text); font-size:15px; line-height:26px; }
-  #toRT:hover { background:#3d3d3d; }
-  /* TradingView's type-to-change box (digits = interval, letters = symbol) and right-click menu */
-  #kbd { position:absolute; left:50%; top:40%; transform:translate(-50%,-50%); z-index:30; width:300px; background:#1e1e1e; border-radius:8px;
-         padding:18px 24px 14px; box-shadow:0 2px 24px rgba(0,0,0,.7); text-align:center; }
-  #kbd .kt { font-size:16px; font-weight:600; margin-bottom:14px; } #kbd .kh { font-size:12px; color:var(--dim); margin-top:8px; min-height:15px; }
-  #kbd input { width:100%; background:#000; border:1px solid var(--acc); border-radius:6px; color:var(--text); font:16px -apple-system, BlinkMacSystemFont, sans-serif;
-               text-align:center; padding:8px; outline:none; text-transform:uppercase; }
-  #kbd .kl div { display:flex; justify-content:space-between; padding:7px 10px; border-radius:4px; cursor:pointer; text-align:left; font-size:14px; }
-  #kbd .kl div:first-child, #kbd .kl div:hover { background:#2e2e2e; } #kbd .kl span { color:var(--dim); font-size:12px; }
-  #menu { position:fixed; z-index:50; min-width:210px; background:#1e1e1e; border-radius:6px; padding:6px 0; box-shadow:0 2px 16px rgba(0,0,0,.7); font-size:14px; }
-  #menu div { display:flex; justify-content:space-between; gap:24px; padding:7px 16px; cursor:pointer; } #menu div:hover { background:#2e2e2e; }
-  #menu kbd { font:12px -apple-system, sans-serif; color:var(--dim); }
-  /* trade ticket: one column, no boxes; the price ladder is the one strong element */
-  aside { width:320px; flex-shrink:0; background:var(--bg); padding:14px 16px 12px; overflow:auto; }
-  .tk-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-  .tk-head .t { font-size:13px; color:var(--dim); } .tk-head .t b { color:var(--text); font-size:15px; margin-right:3px; }
-  .tk-head select { padding:3px 6px; font-size:12px; }
-  .verdict { font-size:30px; font-weight:800; letter-spacing:-.5px; line-height:1.2; margin-top:6px; }
-  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; }
-  .rule { height:1px; background:var(--line); margin:14px 0 12px; }
-  .field span { display:block; font-size:11px; color:var(--dim); margin-bottom:3px; }
-  .field .in { display:flex; gap:4px; }
-  .field input { width:100%; min-width:0; background:var(--panel); border:1px solid var(--line); border-radius:6px; color:var(--text);
-                 padding:6px 8px; font:600 14px -apple-system, "Apple SD Gothic Neo", sans-serif; font-variant-numeric:tabular-nums; }
-  .field input:focus { outline:none; border-color:#2962ff; }
-  .order { display:flex; justify-content:space-between; align-items:baseline; margin-top:8px; font-size:12px; color:var(--dim); font-variant-numeric:tabular-nums; }
-  .order b { color:var(--text); font-size:14px; margin-left:4px; }
-  .lv-note { font-size:12px; color:#f0a202; margin-bottom:4px; }
-  .lv { --c:var(--dim); position:relative; display:grid; grid-template-columns:1fr auto 62px; gap:8px; align-items:center; padding:7px 4px 7px 24px; }
-  .lv::before { content:""; position:absolute; left:9px; top:0; bottom:0; width:2px; background:var(--rail); }
-  .lv:first-child::before { top:50%; } .lv:last-child::before { bottom:50%; }
-  .lv i { position:absolute; left:4px; top:50%; width:12px; height:12px; margin-top:-6px; border-radius:50%; border:2px solid var(--c); background:var(--bg); z-index:1; }
-  .lv.done i { background:var(--c); }
-  .lv .nm { font-size:13px; font-weight:600; } .lv .nm small, .lv .px small { display:block; font-size:11px; color:var(--dim); font-weight:400; }
-  .lv .px { text-align:right; font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; }
-  .lv .pl { text-align:right; font-size:13px; font-weight:700; color:var(--c); font-variant-numeric:tabular-nums; }
-  .lv.gain { --rail:rgba(8,153,129,.35); } .lv.loss { --rail:rgba(242,54,69,.35); }
-  .lv.tp { --c:var(--up); } .lv.be { --c:#7fcfc4; } .lv.stop { --c:var(--down); }
-  .lv.off { opacity:.45; }
-  .lv.entry { --c:#2962ff; background:rgba(41,98,255,.09); border-radius:8px; }
-  .lv-h { display:grid; grid-template-columns:1fr auto 62px; gap:8px; padding:0 4px 2px 24px; font-size:11px; color:#5d6475; text-align:right; }
-  .lv-foot { font-size:11.5px; color:var(--dim); margin:4px 0 0 24px; }
-  .crit { margin-top:12px; }
-  .crit-h { display:flex; align-items:baseline; gap:6px; font-size:12px; color:var(--dim); margin:10px 0 3px; }
-  .crit-h b { font-size:15px; font-variant-numeric:tabular-nums; } .crit-h .ok { color:var(--up); } .crit-h .no { color:var(--down); }
-  .cr { display:grid; grid-template-columns:18px 1fr auto; gap:6px; align-items:center; padding:3px 0; font-size:12.5px; }
-  .cr .ic { font-weight:800; text-align:center; } .cr.ok .ic { color:var(--up); } .cr.no .ic { color:var(--down); } .cr.mid .ic { color:var(--dim); }
-  .cr .vl { color:var(--dim); font-variant-numeric:tabular-nums; text-align:right; } .cr.no .vl { color:#ff8a87; }
-  .tk-foot { margin-top:14px; font-size:10.5px; color:#5d6475; }
-  .dim { color:var(--dim); font-size:12px; }
-  @media (max-width: 760px) { body { height:auto; } main { flex-direction:column; height:auto; } .chartCol { flex:none; height:70vh; } aside { width:100%; }
-    #tools { width:100%; flex-direction:row; padding:0 4px; overflow-x:auto; } #tools .sep { width:1px; height:20px; } #dot + #upd, #bottom .sep { display:none; }
-    #bottom { overflow-x:auto; } #bottom button { padding:4px 5px; } }
+  :root { --bg:#ffffff; --text:#131722; --dim:#787b86; --line:#e0e3eb; --soft:#f0f3fa; }
+  html, body { height:100%; }
+  body { margin:0; display:flex; flex-direction:column; background:var(--bg); color:var(--text);
+    font:14px -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, "Apple SD Gothic Neo", sans-serif; }
+  header { display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; padding:6px 12px; border-bottom:1px solid var(--line); }
+  #tfs { display:flex; gap:2px; }
+  #tfs button { background:none; border:0; border-radius:4px; padding:6px 9px; font:inherit; color:var(--dim); cursor:pointer; }
+  #tfs button:hover { background:var(--soft); color:var(--text); }
+  #tfs button.on { background:var(--soft); color:var(--text); font-weight:600; }
+  #price { font-weight:600; font-variant-numeric:tabular-nums; }
+  #st { color:var(--dim); font-size:12px; }
+  #dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#F23645; margin-right:5px; }
+  #legend { display:flex; flex-wrap:wrap; gap:4px 12px; margin-left:auto; font-size:12px; color:var(--dim); }
+  #legend span::before { content:""; display:inline-block; width:18px; height:3px; margin-right:5px; vertical-align:middle; background:var(--c); }
+  #chart { flex:1; min-height:0; }
 </style>
 </head>
 <body>
 <header>
-  <select id="sym" title="심볼"><option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option></select>
-  <span class="sep"></span>
-  <select id="iv" title="봉"></select>
-  <select id="scale" hidden><option value="0" selected>일반</option><option value="1">로그</option></select>
-  <span class="sep"></span>
-  <span class="dim"><span id="dot"></span><span id="upd">연결 중…</span></span>
-  <div id="price">-</div>
+  <b>BTCUSDT 무기한</b>
+  <div id="tfs"></div>
+  <span id="price">-</span>
+  <span id="st"><span id="dot"></span><span id="upd">불러오는 중…</span></span>
+  <div id="legend" title="봉마다 아직 안 깨진 지지·저항 (현재가 위·아래로 가까운 3개씩). 진할수록 긴 봉."></div>
 </header>
-<main>
-  <div id="tools">
-    <button data-tool="" class="on" title="십자선 (Esc)"><svg viewBox="0 0 28 28"><path d="M14 5v7M14 16v7M5 14h7M16 14h7"/></svg></button>
-    <button data-tool="line" title="추세선 (⌥T) · Shift = 45° 고정"><svg viewBox="0 0 28 28"><path d="M7.5 20.5l13-13"/><circle cx="6" cy="22" r="2"/><circle cx="22" cy="6" r="2"/></svg></button>
-    <button data-tool="h" title="수평선 (⌥H = 마우스 위치에 바로)"><svg viewBox="0 0 28 28"><path d="M4 14h20"/><circle cx="14" cy="14" r="2"/></svg></button>
-    <button data-tool="v" title="수직선 (⌥V)"><svg viewBox="0 0 28 28"><path d="M14 4v20"/><circle cx="14" cy="14" r="2"/></svg></button>
-    <button data-tool="rect" title="박스 (⌥⇧R)"><svg viewBox="0 0 28 28"><rect x="6" y="8" width="16" height="12"/></svg></button>
-    <button data-tool="fib" title="피보나치 되돌림 (⌥F)"><svg viewBox="0 0 28 28"><path d="M5 6h18M5 11h18M5 16h18M5 22h18"/></svg></button>
-    <span class="sep"></span>
-    <button data-tool="measure" title="측정: Shift + 클릭"><svg viewBox="0 0 28 28"><path d="M4.5 18.5l14-14 5 5-14 14z"/><path d="M9 14l2.5 2.5M12 11l2.5 2.5M15 8l2.5 2.5"/></svg></button>
-    <span class="sep"></span>
-    <button id="magBtn" title="자석: 가까운 시가·고가·저가·종가에 붙음 (⌘ 누르는 동안 반대로)"><svg viewBox="0 0 28 28"><path d="M8 5v9a6 6 0 0 0 12 0V5h-4v9a2 2 0 0 1-4 0V5z"/><path d="M8 9h4M16 9h4"/></svg></button>
-    <button id="keepBtn" title="그리기 유지: 하나 그려도 도구가 안 풀림"><svg viewBox="0 0 28 28"><path d="M6 22l1.5-5.5L18 6l4 4L11.5 20.5z"/><path d="M15.5 8.5l4 4"/></svg></button>
-    <button id="eyeBtn" title="그림 숨기기 (⌘⌥H)"><svg viewBox="0 0 28 28"><path d="M3 14s4-7 11-7 11 7 11 7-4 7-11 7S3 14 3 14z"/><circle cx="14" cy="14" r="3"/></svg></button>
-    <span class="sep"></span>
-    <button data-tool="del" title="지우개: 그린 것을 클릭하면 삭제 (선택 후 Delete도 됨)"><svg viewBox="0 0 28 28"><path d="M11 22h12M8 19l9.5-9.5 5 5L17 20H9z"/></svg></button>
-    <button id="clearDraw" title="그린 것 전부 삭제"><svg viewBox="0 0 28 28"><path d="M8 9h12M12 9V6h4v3M9.5 9l1 14h7l1-14"/></svg></button>
-  </div>
-  <div class="chartCol">
-    <div id="chartWrap"><canvas id="heat"></canvas><div id="chart"></div><canvas id="overlay"></canvas><div id="ohlc"></div><button id="toRT" hidden title="최신 봉으로">»</button><div id="kbd" hidden><div class="kt"></div><input id="kbdIn" autocomplete="off" spellcheck="false"><div class="kh"></div><div class="kl"></div></div></div>
-    <div id="bottom"><span id="ranges"></span><span class="sep"></span><span id="clock"></span><span class="sep"></span>
-      <button id="logBtn" title="로그 가격축">log</button><button id="fitBtn" title="세로 범위를 캔들에 자동 맞춤">auto</button></div>
-  </div>
-  <aside>
-    <div class="tk-head"><div class="t"><b id="ckCoin"></b>4시간 타점</div>
-      <div style="display:flex;gap:6px"><label class="field"><span>지갑 USDT</span><input id="acct" type="number" min="1" step="any" style="width:74px"></label>
-      <label class="field"><span>배율</span><input id="mult" type="number" min="0.1" max="10" step="0.5" style="width:52px"></label></div></div>
-    <div id="ckDir"></div>
-    <div id="ckCrit"></div>
-    <div class="order" id="ckOrder"></div>
-    <div class="rule"></div>
-    <div id="ckLadder"></div>
-    <div class="rule"></div>
-    <div id="liqBox"></div>
-    <div class="rule"></div>
-    <div class="crit-h">화면에 보이기 <span class="dim" style="font-size:11px">누르면 켜기/끄기</span></div>
-    <div id="layers"></div>
-    <div class="lv-foot" style="margin:8px 0 0;line-height:1.7">
-      <b style="color:#089981">▲ 롱</b> 롱 진입 (숏 들고 있었으면 정리하고 롱) · <b style="color:#F23645">▼ 숏</b> 숏 진입<br>
-      <b style="color:#8a90a0">● 롱 끝 / 숏 끝</b> 포지션 정리하고 현금으로 쉬기. Squeeze 지표(상승횡보)만 이렇게 쉬고, 장세가 바뀌어 지표가 바뀔 때도 생김<br>
-      <b style="color:#ce93d8">보라선</b> 200일선: 가격이 위면 상승장, 아래면 하락장 (장세 판정)<br>
-      <b style="color:#fde725">청산지도</b> 밝을수록 그 가격에 아직 안 터진 청산 물량이 많다는 <b>추정</b>. 바이낸스 미결제약정 증가분에 레버리지 10·25·50·100배를 가정해 계산(거래소는 실제 포지션을 공개 안 함). 오른쪽 끝 막대 = 지금 단면(초록 롱·빨강 숏). 바이낸스가 OI를 30일치만 줘서 최근 30일만 보임<br>
-      화살표는 4시간 마감 다음 봉에 찍힘 = 그 봉 시작가로 매매. 차트가 좁으면 글자 없이 점만 보임</div>
-    <div class="tk-foot">장세(200일선·ADX)마다 분기별로 성적 1등 지표를 골라 4시간봉 신호대로 들고 있는 방식 (research_indicator_regimes.md).
-      200달러 재계산(sim_200x.py, 2024-07~2026-11-04, BTC/ETH/SOL, 수수료 0.05%): 배율 1 = 260달러(+30%, 낙폭 -34%), 최근 1년 -9%, 최근 3개월 -27%. 배율 3 이상은 손해, 10·30배는 몇 주 안에 강제청산. 통계 증명 전. 교차 마진. 투자 조언 아님.</div>
-  </aside>
-</main>
-<div id="menu" hidden></div>
+<div id="chart"></div>
+
+<script id="sr">
+// 봉별 지지·저항. btc_levels.py 와 같은 규칙이고, 같은 값을 내는지 check_sr_js.py 로 확인한다.
+const SR = (() => {
+  //            N, 왼쪽엄격, 오른쪽엄격, 동시허용, 폭 ATR배, 폭 하한(가격비), 돌파 ATR배, 돌파 하한, 만료봉, 폭 상한(가격비. 이때 돌파 여유는 2%까지)
+  const TF = { "1년": [1, 1, 1, 1, .25, 0, .10, 0, 0, .05], "6개월": [1, 1, 1, 1, .25, 0, .10, 0, 0, .05],
+    "3개월": [1, 1, 1, 1, .25, 0, .10, 0, 0, .05], "1개월": [2, 1, 1, 1, .25, 0, .10, 0, 0, .05],
+    "4시간": [3, 1, 0, 0, .25, .001, .10, .0005, 360, 0], "1시간": [2, 1, 1, 1, .25, 0, .10, 0, 336, 0] };
+  const KEY = { "3개월": d => d.getUTCFullYear() * 10 + Math.floor(d.getUTCMonth() / 3),
+    "6개월": d => d.getUTCFullYear() * 10 + Math.floor(d.getUTCMonth() / 6), "1년": d => d.getUTCFullYear() };
+  const SHOW = 3;                                              // 현재가 위·아래로 가까운 구간 3개씩
+
+  // 월봉을 분기·반기·연으로 묶는다 (마지막 묶음은 진행 중)
+  function group(mo, key) {
+    const out = [];
+    for (const x of mo) {
+      const k = key(new Date(x.t)), g = out[out.length - 1];
+      if (g && g.k === k) { g.h = Math.max(g.h, x.h); g.l = Math.min(g.l, x.l); g.c = x.c; }
+      else out.push({ k, t: x.t, o: x.o, h: x.h, l: x.l, c: x.c });
+    }
+    return out;
+  }
+
+  // Wilder ATR14 (봉 20개 이상), 아니면 그때까지 실제 범위의 평균
+  function atr(b) {
+    const n = b.length, A = new Array(n).fill(NaN);
+    let s = 0;
+    for (let i = 0; i < n; i++) {
+      const x = b[i], tr = i ? Math.max(x.h - x.l, Math.abs(x.h - b[i - 1].c), Math.abs(x.l - b[i - 1].c)) : x.h - x.l;
+      if (n < 20) { s += tr; A[i] = s / (i + 1); }
+      else if (i < 14) { s += tr; if (i === 13) A[i] = s / 14; }
+      else A[i] = (A[i - 1] * 13 + tr) / 14;
+    }
+    return A;
+  }
+
+  // 좌우 N봉 스윙 피벗 → [봉 번호, 역할(-1 고점=저항, +1 저점=지지)], 고점 먼저
+  function pivots(b, N, ls, rs, both) {
+    const H = [], L = [];
+    for (let i = N; i < b.length - N; i++) {
+      let hi = true, lo = true;
+      for (let k = 1; k <= N; k++) {
+        hi = hi && (ls ? b[i].h > b[i - k].h : b[i].h >= b[i - k].h) && (rs ? b[i].h > b[i + k].h : b[i].h >= b[i + k].h);
+        lo = lo && (ls ? b[i].l < b[i - k].l : b[i].l <= b[i - k].l) && (rs ? b[i].l < b[i + k].l : b[i].l <= b[i + k].l);
+      }
+      if (!both && hi && lo) hi = lo = false;
+      if (hi) H.push([i, -1]);
+      if (lo) L.push([i, 1]);
+    }
+    return H.concat(L);
+  }
+
+  // 완료 봉 b에서 시간 순서대로 구간을 만들고 갱신 → 살아 있는 구간 (1개월 이상은 직전 봉 고가·저가도)
+  // 구간 = 피벗 ± 폭, 종가 2개 연속 밖이면 첫 번째는 역할 전환, 두 번째는 무효. 1시간 336봉·4시간 360봉 지나면 만료
+  function zones(b, tf) {
+    const [N, ls, rs, both, KW, PW, KB, PB, life, cap] = TF[tf], A = atr(b), n = b.length, born = {}, Z = [];
+    for (const [i, r] of pivots(b, N, ls, rs, both)) (born[i + N] ??= []).push([i, r]);
+    for (let t = 0; t < n; t++) {
+      const c = b[t].c;
+      for (const z of Z) {
+        if (!z.alive || t <= z.conf) continue;
+        if (life && t - z.s > life) { z.alive = false; continue; }
+        z.run = (z.role < 0 ? c > z.U + z.m : c < z.D - z.m) ? z.run + 1 : 0;
+        if (z.run >= 2) {
+          if (z.flips) z.alive = false;
+          else { z.role = -z.role; z.flips = 1; z.run = 0; }
+        }
+      }
+      for (const [s, r] of born[t] || []) {
+        const p = r > 0 ? b[s].l : b[s].h;
+        if (!Number.isFinite(A[t])) continue;
+        let w = Math.max(KW * A[t], PW * p), m = KB * A[t] + PB * p;
+        if (cap) { w = Math.min(w, cap * p); m = Math.min(m, .02 * p); }
+        let near = null;                                       // 가까운 피벗은 기존 구간에 합친다 (접촉 수만 +1)
+        for (const z of Z) {
+          const d = Math.abs(p - z.P);
+          if (z.alive && d <= Math.min(w, z.w) && (!near || d < Math.abs(p - near.P) || (d === Math.abs(p - near.P) && z.s < near.s))) near = z;
+        }
+        if (near) { near.touch++; continue; }
+        Z.push({ P: p, w, D: p - w, U: p + w, m, role: r, s, conf: t, run: 0, flips: 0, alive: true, touch: 1 });
+      }
+    }
+    const out = Z.filter(z => z.alive);
+    if (!life && n) {
+      const x = b[n - 1];
+      for (const [p, r] of [[x.h, -1], [x.l, 1]]) {
+        const w = Math.min(KW * A[n - 1], cap * p);
+        if (!out.some(z => Math.abs(p - z.P) <= Math.min(w, z.w))) out.push({ P: p, w, D: p - w, U: p + w, role: r, touch: 1 });
+      }
+    }
+    return out;
+  }
+
+  // 같은 쪽에서 겹치는 구간은 한 띠로 합친다
+  function union(zs) {
+    const out = [];
+    for (const z of [...zs].sort((a, b) => a.D - b.D)) {
+      const g = out[out.length - 1];
+      if (g && z.D <= g.U) { g.D = Math.min(g.D, z.D); g.U = Math.max(g.U, z.U); g.P = (g.D + g.U) / 2; g.parts.push(z); }
+      else out.push({ ...z, parts: [z] });
+    }
+    return out;
+  }
+
+  function pick(Z, px) {
+    return { sup: union(Z.filter(z => z.U < px)).sort((a, b) => (px - a.P) - (px - b.P)).slice(0, SHOW),
+      res: union(Z.filter(z => z.D > px)).sort((a, b) => (a.P - px) - (b.P - px)).slice(0, SHOW),
+      inside: union(Z.filter(z => z.D <= px && px <= z.U)) };
+  }
+
+  // 입력: 월봉·4시간·1시간 (각각 마지막이 진행 중 봉) → 봉별 살아 있는 구간
+  function compute(mo, h4, h1) {
+    const all = { "1년": group(mo, KEY["1년"]), "6개월": group(mo, KEY["6개월"]), "3개월": group(mo, KEY["3개월"]), "1개월": mo, "4시간": h4, "1시간": h1 };
+    return Object.fromEntries(Object.entries(all).map(([tf, b]) => [tf, zones(b.slice(0, -1), tf)]));
+  }
+
+  return { KEY, group, compute, pick };
+})();
+</script>
+
 <script>
 const $ = id => document.getElementById(id);
-const TZ = -new Date().getTimezoneOffset() * 60;           // show candle times in local time (KST)
-let chart, series, data = [], hist = [], ws = null, loadingOld = false, hasMore = true, livePrice = null, dirty = true;
+const ORDER = ["1년", "6개월", "3개월", "1개월", "4시간", "1시간"];
+const SHADE = { "1년": "#000000", "6개월": "#262626", "3개월": "#4c4c4c", "1개월": "#727272", "4시간": "#989898", "1시간": "#bebebe" };   // 긴 봉 검정 → 짧은 봉일수록 밝게
+const IV = { "1년": "1M", "6개월": "1M", "3개월": "1M", "1개월": "1M", "4시간": "4h", "1시간": "1h" };   // 받아 오는 바이낸스 봉
+const API = "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&limit=1500&interval=";
+const WS = "wss://fstream.binance.com/market/ws/btcusdt@kline_";   // USDⓈ-M 스트림은 /market/ws/ 아래 (옛 /ws/는 연결만 되고 안 옴)
+const UP = "#089981", DN = "#F23645", TZ = -new Date().getTimezoneOffset() * 60;   // 봉 시간을 내 시간(KST)으로
+const two = n => String(n).padStart(2, "0");
+let tf = "4시간", D = null, Z = null, px = null, ws = null, lines = [], drawn = "";
+try { if (ORDER.includes(localStorage.srTf)) tf = localStorage.srTf; } catch {}
 
-const api = () => "https://fapi.binance.com/fapi/v1/klines";
-// USDⓈ-M market streams live under /market/ws/ (the old /ws/ path connects but sends nothing)
-const wsUrl = () => "wss://fstream.binance.com/market/ws/" + $("sym").value.toLowerCase() + "@kline_" + $("iv").value;
-// q = traded USDT, tb = the part bought at market (taker buy); the rest was sold at market
-// v = traded coins (TradingView's "Vol · BTC")
-const toBar = k => ({ time: k[0] / 1000 + TZ, open: +k[1], high: +k[2], low: +k[3], close: +k[4], v: +k[5], q: +k[7], tb: +k[10] });
-// exchange tick size, as TradingView prints prices; filled for every coin from exchangeInfo (loadSymbols)
-const DEC = { BTCUSDT: 1, ETHUSDT: 2, SOLUSDT: 2 }, TICK = { BTCUSDT: .1, ETHUSDT: .01, SOLUSDT: .01 };
-const fmt = v => { const t = DEC[$("sym").value], d = Math.abs(v) >= 1 || !v ? t ?? 2 : Math.max(4, t ?? 0);
-  return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); };
-const UP = "#089981", DN = "#F23645";
-const pfmt = () => { const s = $("sym").value; return { type: "price", precision: DEC[s] ?? 2, minMove: TICK[s] ?? .01 }; };
-// every Binance kline interval TradingView also offers (minutes); the indicator/arrows need bars of 4h or shorter
-const INTERVALS = [["1m", 1], ["5m", 5], ["15m", 15], ["30m", 30], ["1h", 60], ["2h", 120], ["4h", 240], ["6h", 360], ["12h", 720], ["1d", 1440], ["1w", 10080]];
-const IV_SEC = Object.fromEntries(INTERVALS.map(([v, m]) => [v, m * 60])), ivSec = () => IV_SEC[$("iv").value];
-$("iv").innerHTML = INTERVALS.map(([v]) => `<option value="${v}"${v === "4h" ? " selected" : ""}>${v === "1d" ? "D" : v === "1w" ? "W" : v}</option>`).join("");
-const pct = (a, b) => (a / b - 1) * 100;
-const sgn = v => (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
-const nowPrice = () => livePrice ?? (data.length ? data[data.length - 1].close : null);
+const chart = LightweightCharts.createChart($("chart"), {
+  autoSize: true,
+  layout: { background: { color: "#ffffff" }, textColor: "#131722", fontSize: 12,
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, "Apple SD Gothic Neo", sans-serif' },
+  grid: { vertLines: { color: "#f0f3fa" }, horzLines: { color: "#f0f3fa" } },
+  rightPriceScale: { borderVisible: false, scaleMargins: { top: .08, bottom: .08 } },
+  timeScale: { borderVisible: false, rightOffset: 8 },
+  crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  localization: { locale: "ko-KR", priceFormatter: v => Math.round(v).toLocaleString("en-US"), timeFormatter: t => {
+    const d = new Date(t * 1000), s = `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}`;
+    return IV[tf] === "1M" ? s : `${s}-${two(d.getUTCDate())} ${two(d.getUTCHours())}:00`; } },
+});
+const series = chart.addSeries(LightweightCharts.CandlestickSeries, { upColor: UP, downColor: DN, borderVisible: false,
+  wickUpColor: UP, wickDownColor: DN, priceFormat: { type: "price", precision: 0, minMove: 1 } });
 
-async function klines(interval, endTime) {
-  const p = new URLSearchParams({ symbol: $("sym").value, interval, limit: 1000 });
-  if (endTime) p.set("endTime", endTime);
-  const r = await fetch(api() + "?" + p);
-  if (!r.ok) throw new Error("HTTP " + r.status);
-  return (await r.json()).map(toBar);
-}
+const toBar = k => ({ t: +k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4] });
+const toCandle = b => ({ time: b.t / 1000 + TZ, open: b.o, high: b.h, low: b.l, close: b.c });
+const get = iv => fetch(API + iv + (iv === "1M" ? "&startTime=0" : ""))
+  .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(a => a.map(toBar));
+const candles = () => (SR.KEY[tf] ? SR.group(D["1M"], SR.KEY[tf]) : D[IV[tf]]).map(toCandle);
 
-// ---- bot rule (identical to bot.target_weight): 6 trend votes on completed daily closes + 40% vol target ----
-const todayUTC = () => Math.floor(Date.now() / 864e5) * 864e5;
-
-// full daily history: drives the market check (200-day line, ADX) and the 200-day line
-async function loadDaily(full) {
-  let bars = await klines("1d");
-  if (full) {
-    for (;;) {
-      const older = await klines("1d", (bars[0].time - TZ) * 1000 - 1), fresh = older.filter(b => b.time < bars[0].time);
-      if (!fresh.length) break;
-      bars = fresh.concat(bars);
-      if (older.length < 1000) break;
-    }
-    hist = bars;
-  } else {
-    const m = new Map(hist.map(b => [b.time, b])); bars.forEach(b => m.set(b.time, b));
-    hist = [...m.values()].sort((a, b) => a.time - b.time);
+// 6개 봉의 선을 모두 그린다. 여러 봉에 같은 가격이 있으면 선 하나(가장 긴 봉 색)에 이름을 모은다.
+// 짧은 봉 선부터 그려서 긴 봉 선이 위에 온다
+function draw() {
+  if (!Z || px == null) return;
+  const at = new Map();
+  for (const t of ORDER) {
+    const p = SR.pick(Z[t], px);
+    for (const z of [...p.res, ...p.inside, ...p.sup]) { const k = Math.round(z.P); at.set(k, [...new Set([...(at.get(k) || []), t])]); }
   }
-  dirty = true;
+  const sel = [...at].sort((a, b) => ORDER.indexOf(b[1][0]) - ORDER.indexOf(a[1][0]));
+  const key = sel.join();
+  if (key === drawn) return;
+  drawn = key;
+  lines.forEach(l => series.removePriceLine(l));
+  lines = sel.map(([p, ts]) => series.createPriceLine({ price: p, color: SHADE[ts[0]], lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Solid,
+    axisLabelVisible: true, title: ts.join("·"), axisLabelColor: SHADE[ts[0]], axisLabelTextColor: ORDER.indexOf(ts[0]) < 4 ? "#ffffff" : "#131722" }));
 }
 
-// ---- drawings, TradingView style. Anchored to time + price (so they follow every interval), kept per symbol in this browser.
-// Tools: trend line ⌥T, horizontal ⌥H, vertical ⌥V, box ⌥⇧R, fib ⌥F, measure Shift+click. Place by click-click or press-drag-release.
-// Click a drawing to select it: drag an anchor to reshape, drag the body to move, Delete removes, right-click for a menu, ⌘Z / ⌘⇧Z.
-// Magnet (or ⌘ held) snaps to the bar's O/H/L/C; Shift locks a trend line to 45° steps. Moves are in pixels, so a log axis works.
-const BLUE = "#2962ff", FIB = [[0, "#787b86"], [.236, "#f23645"], [.382, "#ff9800"], [.5, "#4caf50"], [.618, "#089981"], [.786, "#00bcd4"], [1, "#787b86"]];
-let tool = "", shapes = [], pending = null, mouse = null, sel = -1, meas = null, magnet = false, keepDraw = false, undo = [], redo = [];
-const drawKey = () => `draw_perp_${$("sym").value}`;
-const loadShapes = () => { try { shapes = JSON.parse(localStorage.getItem(drawKey()) || "[]"); } catch { shapes = []; }
-  pending = null; sel = -1; meas = null; undo = []; redo = []; };
-const saveShapes = () => { try { localStorage.setItem(drawKey(), JSON.stringify(shapes)); } catch {} dirty = true; };
-const snapUndo = () => { undo.push(JSON.stringify(shapes)); if (undo.length > 100) undo.shift(); redo.length = 0; };
-function undoRedo(dir) {                                 // -1 undo, +1 redo
-  const [from, to] = dir < 0 ? [undo, redo] : [redo, undo]; if (!from.length) return;
-  to.push(JSON.stringify(shapes)); shapes = JSON.parse(from.pop()); sel = -1; saveShapes();
-}
-const barSec = () => data.length > 1 ? data[data.length - 1].time - data[data.length - 2].time : 86400;
-function xToTime(x) {
-  const l = chart.timeScale().coordinateToLogical(x), n = data.length;
-  if (l === null || !n) return null;
-  const i = Math.floor(l);
-  if (i < 0) return data[0].time + l * barSec();
-  if (i >= n - 1) return data[n - 1].time + (l - (n - 1)) * barSec();
-  return data[i].time + (l - i) * (data[i + 1].time - data[i].time);
-}
-function timeToX(t) {
-  const n = data.length; let l;
-  if (t <= data[0].time) l = (t - data[0].time) / barSec();
-  else if (t >= data[n - 1].time) l = n - 1 + (t - data[n - 1].time) / barSec();
-  else { let a = 0, b = n - 1; while (b - a > 1) { const m = (a + b) >> 1; if (data[m].time <= t) a = m; else b = m; }
-    l = a + (t - data[a].time) / (data[b].time - data[a].time); }
-  // the library returns 0 for a fractional logical index, so interpolate between the two whole bars around it
-  const ts = chart.timeScale(), f = Math.floor(l), xa = ts.logicalToCoordinate(f), xb = ts.logicalToCoordinate(f + 1);
-  return xa === null || xb === null ? null : xa + (xb - xa) * (l - f);
-}
-function shapeGeom(s) {                                  // pixel geometry, or null when it cannot be placed yet
-  if (s.type === "v") { const x1 = timeToX(s.t1); return x1 === null ? null : { x1 }; }
-  const y1 = series.priceToCoordinate(s.p1);
-  if (s.type === "h") return y1 === null ? null : { y1 };
-  const x1 = timeToX(s.t1), x2 = timeToX(s.t2), y2 = series.priceToCoordinate(s.p2);
-  return [x1, x2, y1, y2].some(v => v === null) ? null : { x1, x2, y1, y2 };
-}
-// the handles of a selected drawing; each says which time / price field it moves (box corners mix the two points)
-const ANCH = { line: [["t1", "p1"], ["t2", "p2"]], fib: [["t1", "p1"], ["t2", "p2"]], rect: [["t1", "p1"], ["t2", "p2"], ["t1", "p2"], ["t2", "p1"]],
-  h: [[null, "p1"]], v: [["t1", null]] };
-const anchorPts = (s, q, pw, ph) => ANCH[s.type].map(([t, p]) => ({ t, p, x: t ? q[t === "t1" ? "x1" : "x2"] : pw / 2, y: p ? q[p === "p1" ? "y1" : "y2"] : ph / 2 }));
-function drawShapes(g, pw, ph, W, H) {
-  const list = shapes.slice();
-  if (mouse && pending) list.push({ ...pending, t2: mouse.t, p2: mouse.p });
-  else if (mouse && (tool === "h" || tool === "v")) list.push({ type: tool, t1: mouse.t, p1: mouse.p });
-  const y = v => series.priceToCoordinate(v), seg = (a, b, c, d) => { g.beginPath(); g.moveTo(a, b); g.lineTo(c, d); g.stroke(); };
-  g.save(); g.beginPath(); g.rect(0, 0, pw, ph); g.clip();
-  g.font = "12px -apple-system, BlinkMacSystemFont, sans-serif"; g.textBaseline = "middle";
-  for (const s of list) {                                // TradingView's default styles
-    const q = shapeGeom(s); if (!q) continue;
-    g.strokeStyle = g.fillStyle = BLUE; g.lineWidth = 2; g.globalAlpha = 1;
-    if (s.type === "h") seg(0, q.y1, pw, q.y1);
-    else if (s.type === "v") continue;                   // drawn below, across every pane like TradingView
-    else if (s.type === "line") seg(q.x1, q.y1, q.x2, q.y2);
-    else if (s.type === "rect") {
-      const x = Math.min(q.x1, q.x2), yy = Math.min(q.y1, q.y2), w = Math.abs(q.x2 - q.x1), h = Math.abs(q.y2 - q.y1);
-      g.lineWidth = 1; g.strokeStyle = "#9c27b0"; g.fillStyle = "rgba(156,39,176,.2)"; g.fillRect(x, yy, w, h); g.strokeRect(x, yy, w, h);
-    } else if (s.type === "fib") {
-      const xa = Math.min(q.x1, q.x2), xb = Math.max(q.x1, q.x2), lv = FIB.map(([f, c]) => [f, c, y(s.p2 + (s.p1 - s.p2) * f), s.p2 + (s.p1 - s.p2) * f]);
-      g.lineWidth = 1; g.textAlign = "right";
-      lv.forEach(([f, c, yy, p], k) => { if (yy === null) return;
-        const y0 = k ? lv[k - 1][2] : null;
-        if (y0 !== null) { g.globalAlpha = .15; g.fillStyle = c; g.fillRect(xa, Math.min(y0, yy), xb - xa, Math.abs(yy - y0)); }
-        g.globalAlpha = 1; g.strokeStyle = g.fillStyle = c; seg(xa, yy, xb, yy); g.fillText(`${f} (${fmt(p)})`, xa - 6, yy); });
-      g.textAlign = "left"; g.setLineDash([4, 4]); g.strokeStyle = "#787b86"; seg(q.x1, q.y1, q.x2, q.y2); g.setLineDash([]);
-    }
-  }
-  g.globalAlpha = 1;
-  if (sel >= 0 && shapes[sel]) { const s = shapes[sel], q = shapeGeom(s);   // selected: white handles with a blue ring
-    if (q) for (const a of anchorPts(s, q, pw, ph)) { g.beginPath(); g.arc(a.x, a.y, 5, 0, 7); g.fillStyle = "#fff"; g.fill(); g.lineWidth = 1.5; g.strokeStyle = BLUE; g.stroke(); } }
-  g.restore();
-  // value labels on the axes for horizontal / vertical lines, in the line colour
-  g.font = "12px -apple-system, BlinkMacSystemFont, sans-serif"; g.textBaseline = "middle"; const tsH = chart.timeScale().height();
-  for (const s of list) {
-    if (s.type === "h") { const yy = y(s.p1); if (yy === null || yy < 0 || yy > ph) continue;
-      g.fillStyle = BLUE; g.fillRect(pw, yy - 9, W - pw, 18); g.fillStyle = "#fff"; g.fillText(fmt(s.p1), pw + 8, yy); }
-    else if (s.type === "v") { const xx = timeToX(s.t1); if (xx === null || xx < 0 || xx > pw) continue;
-      g.strokeStyle = BLUE; g.lineWidth = 2; g.beginPath(); g.moveTo(xx, 0); g.lineTo(xx, H - tsH); g.stroke();
-      const txt = chart.options().localization.timeFormatter(Math.round(s.t1)), w = g.measureText(txt).width + 16;
-      g.fillStyle = BLUE; g.fillRect(xx - w / 2, H - tsH, w, tsH); g.fillStyle = "#fff"; g.fillText(txt, xx - w / 2 + 8, H - tsH / 2); }
-  }
-  g.textBaseline = "alphabetic";
-}
-function drawMeasure(g, pw, ph) {                         // TradingView's ruler: box, arrows, Δprice (Δ%) and bars / time
-  const a = meas.a, b = meas.b || mouse; if (!b) return;
-  const x1 = timeToX(a.t), x2 = timeToX(b.t), y1 = series.priceToCoordinate(a.p), y2 = series.priceToCoordinate(b.p);
-  if ([x1, x2, y1, y2].some(v => v === null)) return;
-  const up = b.p >= a.p, c = up ? BLUE : DN, xm = (x1 + x2) / 2, ym = (y1 + y2) / 2, ts = chart.timeScale();
-  const seg = (u, v, w, z) => { g.beginPath(); g.moveTo(u, v); g.lineTo(w, z); g.stroke(); };
-  const head = (x, y, ux, uy) => { g.beginPath(); g.moveTo(x, y); g.lineTo(x - ux * 7 - uy * 4, y - uy * 7 + ux * 4); g.lineTo(x - ux * 7 + uy * 4, y - uy * 7 - ux * 4); g.fill(); };
-  g.save(); g.beginPath(); g.rect(0, 0, pw, ph); g.clip();
-  g.fillStyle = up ? "rgba(41,98,255,.2)" : "rgba(242,54,69,.2)"; g.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
-  g.strokeStyle = g.fillStyle = c; g.lineWidth = 1; seg(xm, y1, xm, y2); seg(x1, ym, x2, ym);
-  if (Math.abs(y2 - y1) > 8) head(xm, y2, 0, Math.sign(y2 - y1)); if (Math.abs(x2 - x1) > 8) head(x2, ym, Math.sign(x2 - x1), 0);
-  const bars = Math.round((ts.coordinateToLogical(x2) ?? 0) - (ts.coordinateToLogical(x1) ?? 0)), dt = Math.abs(b.t - a.t);
-  const dur = dt >= 86400 ? Math.floor(dt / 86400) + "d" + (dt % 86400 >= 3600 ? " " + Math.floor(dt % 86400 / 3600) + "h" : "") : Math.round(dt / 3600) + "h";
-  const l1 = `${b.p < a.p ? "−" : ""}${fmt(Math.abs(b.p - a.p))} (${sgn(pct(b.p, a.p))})`, l2 = `${bars} bars, ${dur}`;
-  g.font = "12px -apple-system, BlinkMacSystemFont, sans-serif"; const w = Math.max(g.measureText(l1).width, g.measureText(l2).width) + 20, h = 40;
-  const bx = xm - w / 2, by = up ? Math.min(y1, y2) - h - 6 : Math.max(y1, y2) + 6;
-  g.beginPath(); g.roundRect(bx, by, w, h, 4); g.fill(); g.fillStyle = "#fff"; g.textAlign = "center"; g.textBaseline = "middle";
-  g.fillText(l1, xm, by + 12); g.fillText(l2, xm, by + 28); g.textAlign = "left"; g.textBaseline = "alphabetic";
-  g.restore();
-}
-function drawUI(g, W, H) {                                // drawings, ruler, the "»" back-to-now button, toolbar toggles
-  const pw = chart.timeScale().width(), ph = chart.panes()[0].getHeight();
-  if (show.draw) drawShapes(g, pw, ph, W, H);
-  if (meas) drawMeasure(g, pw, ph);
-  const r = chart.timeScale().getVisibleLogicalRange(), b = $("toRT");
-  b.hidden = !r || r.to >= data.length - 1; b.style.left = pw - 38 + "px"; b.style.top = ph - 38 + "px";
-  $("eyeBtn").classList.toggle("on", !show.draw); $("magBtn").classList.toggle("on", magnet); $("keepBtn").classList.toggle("on", keepDraw);
-}
-function hitShape(x, yy) {                                 // index of the top-most drawing under the point, or -1
-  if (!show.draw) return -1;
-  const dSeg = (a, b, c, d) => { const L = (c - a) ** 2 + (d - b) ** 2, t = L ? Math.max(0, Math.min(1, ((x - a) * (c - a) + (yy - b) * (d - b)) / L)) : 0;
-    return Math.hypot(x - (a + t * (c - a)), yy - (b + t * (d - b))); };
-  for (let i = shapes.length - 1; i >= 0; i--) {
-    const s = shapes[i], q = shapeGeom(s); if (!q) continue;
-    const box = () => x >= Math.min(q.x1, q.x2) - 5 && x <= Math.max(q.x1, q.x2) + 5 && yy >= Math.min(q.y1, q.y2) - 5 && yy <= Math.max(q.y1, q.y2) + 5;
-    if (s.type === "h" ? Math.abs(yy - q.y1) < 6 : s.type === "v" ? Math.abs(x - q.x1) < 6 : s.type === "line" ? dSeg(q.x1, q.y1, q.x2, q.y2) < 6 : box()) return i;
-  }
-  return -1;
-}
-function hitAnchor(x, yy) {
-  const s = shapes[sel]; if (!s || !show.draw) return null; const q = shapeGeom(s);
-  return q && anchorPts(s, q, chart.timeScale().width(), chart.panes()[0].getHeight()).find(a => Math.hypot(a.x - x, a.y - yy) < 8) || null;
-}
-function pointAt(x, yy, e, from) {                         // chart point under the mouse, with Shift-45° and the magnet
-  if (from && e.shiftKey && tool === "line") { const fx = timeToX(from.t), fy = series.priceToCoordinate(from.p);
-    if (fx !== null && fy !== null) { const dx = x - fx, dy = yy - fy, r = Math.hypot(dx, dy), a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4;
-      x = fx + r * Math.cos(a); yy = fy + r * Math.sin(a); } }
-  let t = xToTime(x), p = series.coordinateToPrice(yy);
-  if (t === null || p === null) return null;
-  if (magnet !== e.metaKey) {                              // ⌘ flips the magnet while held, like TradingView
-    const b = data[Math.round(chart.timeScale().coordinateToLogical(x))];
-    if (b) { const [v, d] = [b.open, b.high, b.low, b.close].map(v => [v, Math.abs(series.priceToCoordinate(v) - yy)]).sort((u, w) => u[1] - w[1])[0];
-      if (d < 40) { p = v; t = b.time; } }
-  }
-  return { t, p };
-}
-function shiftShape(s, o, dx, dy) {                        // move by pixels, so a log price axis moves the same way it looks
-  for (const k of ["t1", "t2"]) if (o[k] !== undefined) { const x = timeToX(o[k]), t = x === null ? null : xToTime(x + dx); if (t !== null) s[k] = t; }
-  for (const k of ["p1", "p2"]) if (o[k] !== undefined) { const y = series.priceToCoordinate(o[k]), p = y === null ? null : series.coordinateToPrice(y + dy); if (p !== null) s[k] = p; }
-}
-function setTool(t) {
-  tool = t; pending = null; if (t) sel = -1;
-  document.querySelectorAll("#tools button[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
-  dirty = true;
-}
-const removeSel = () => { if (sel < 0 || !shapes[sel]) return; snapUndo(); shapes.splice(sel, 1); sel = -1; saveShapes(); };
-const cloneShape = i => { snapUndo(); const o = shapes[i], c = JSON.parse(JSON.stringify(o)); shiftShape(c, o, 20, 20); shapes.push(c); sel = shapes.length - 1; saveShapes(); };
-const toggleDraw = () => { show.draw = !show.draw; try { localStorage.setItem("layers", JSON.stringify(show)); } catch {} if (!show.draw) sel = -1; applyLayers(); };
-const clearAll = () => { if (shapes.length && confirm("그린 것을 전부 지울까요?")) { snapUndo(); shapes = []; sel = -1; saveShapes(); setTool(""); } };
-const resetView = () => { chart.priceScale("right").applyOptions({ autoScale: true });
-  const n = $("iv").value === "1d" ? 180 : 200; chart.timeScale().setVisibleLogicalRange({ from: data.length - n, to: data.length - 1 + 10 }); };
-
-// values of the candle under the mouse (the latest one otherwise), so the close is read as a number, not from the picture
-let hoverBar = null;
-function showOHLC() {
-  const b = hoverBar || data[data.length - 1]; if (!b) return;
-  const i = data.findIndex(x => x.time === b.time), bar = data[i] || b, live = i === data.length - 1;
-  // TradingView legend: name · interval · exchange, OHLC coloured by the change from the previous close, then Vol · coin
-  const ref = i > 0 ? data[i - 1].close : b.open, ch = b.close - ref, col = ch >= 0 ? UP : DN, coin = $("sym").value.replace("USDT", "");
-  const kv = (k, v) => `<span class="k">${k}</span><span style="color:${col}">${v}</span>`;
-  const big = v => v >= 1e9 ? (v / 1e9).toFixed(2) + " B" : v >= 1e6 ? (v / 1e6).toFixed(2) + " M" : v >= 1e3 ? (v / 1e3).toFixed(2) + " K" : v.toFixed(2);
-  // extra line kept from before: volume vs the median of the 30 bars before it, and the share bought at market
-  const t = new Date(b.time * 1000).toISOString(), prev = data.slice(Math.max(0, i - 30), i).map(x => x.q).sort((x, y) => x - y), med = prev[Math.floor(prev.length / 2)];
-  const when = /[dw]$/.test($("iv").value) ? `${t.slice(5, 10)} 봉 ${live ? "(진행 중)" : "(종가 = 다음날 오전 9시 가격)"}` : `${t.slice(5, 10)} ${t.slice(11, 16)}${live ? " (진행 중)" : ""}`;
-  $("ohlc").innerHTML = `<div><span><span class="t">${NAMES[coin] ?? coin} / TetherUS PERPETUAL CONTRACT · ${$("iv").selectedOptions[0].text.replace(/^([DWM])$/, "1$1")} · Binance</span>`
-    + kv("O", fmt(b.open)) + kv("H", fmt(b.high)) + kv("L", fmt(b.low)) + kv("C", fmt(b.close))
-    + `<span style="color:${col};margin-left:6px">${ch >= 0 ? "+" : "−"}${fmt(Math.abs(ch))} (${sgn(ch / ref * 100)})</span></span></div>`
-    + (bar.v !== undefined ? `<div><span>Vol · ${coin} <span style="color:${bar.close >= bar.open ? UP : DN}">${big(bar.v)}</span></span></div>`
-      + `<div><span class="x">${when} · ${big(bar.q)} USDT${med && !live ? ` (평소의 ${(bar.q / med).toFixed(1)}배)` : ""} · 시장가 매수 ${(bar.tb / bar.q * 100).toFixed(0)}%</span></div>` : "");
-}
-const NAMES = { BTC: "Bitcoin", ETH: "Ethereum", SOL: "Solana" };
-
-function signal() {                                     // OHLC line + the 4h card
-  if (!hoverBar) showOHLC();
-  check(nowPrice() ?? hist[hist.length - 1].close);
-}
-
-// Binance USDⓈ-M minimum order: value AND quantity (BTC 0.001 ≈ 85 USDT is the real floor, not the 50 USDT value)
-const MIN_NOTIONAL = { BTCUSDT: 50, ETHUSDT: 20, SOLUSDT: 5 }, MIN_QTY = { BTCUSDT: .001, ETHUSDT: .001, SOLUSDT: .01 };
-// ---- 4시간 타점 = indicator_regimes.py 방식 C: 장세마다 분기별 성적 1등 지표, 공식은 tv_indicators.py와 같게 ----
-// 장세 code = (전날 종가 > 200일선)*2 + (ADX14 >= 25): 0 하락횡보, 1 하락추세, 2 상승횡보, 3 상승추세
-// ponytail: only this quarter's 3 picks are ported to JS; re-run indicator_regimes.py each quarter and port any new pick
-const PICKS = { q: "2026Q4", 0: "SuperTrend", 1: "VW-MACD", 2: "Squeeze Momentum", 3: "VW-MACD" };
-const REG_NAME = ["하락횡보", "하락추세", "상승횡보", "상승추세"];
-const smaA = (x, n) => x.map((_, i) => i < n - 1 ? NaN : x.slice(i - n + 1, i + 1).reduce((a, b) => a + b, 0) / n);
-const trA = (h, l, c) => h.map((_, i) => i ? Math.max(h[i] - l[i], Math.abs(h[i] - c[i - 1]), Math.abs(l[i] - c[i - 1])) : h[i] - l[i]);
-function emaA(x, n) {                                   // pandas ewm(span=n, adjust=False, min_periods=n)
-  const a = 2 / (n + 1), out = []; let v = NaN, k = 0;
-  for (const xi of x) { if (Number.isFinite(xi)) { v = Number.isFinite(v) ? a * xi + (1 - a) * v : xi; k++; } out.push(k >= n ? v : NaN); }
-  return out;
-}
-function rmaA(x, n) {                                   // Wilder: seed = mean of the first n
-  const out = x.map(() => NaN), f = x.slice(0, n).filter(Number.isFinite);
-  if (x.length < n || !f.length) return out;
-  out[n - 1] = f.reduce((a, b) => a + b, 0) / f.length;
-  for (let i = n; i < x.length; i++) out[i] = (out[i - 1] * (n - 1) + x[i]) / n;
-  return out;
-}
-const cols = b => [b.map(x => x.high), b.map(x => x.low), b.map(x => x.close)];
-const IND = {
-  "VW-MACD": b => {                                     // VWMA12 - VWMA26 crossing its 9 EMA, volume = quote volume / HLC3
-    const c = b.map(x => x.close), v = b.map(x => { const t = (x.high + x.low + x.close) / 3; return t > 0 ? x.q / t : 0; });
-    const vw = n => c.map((_, i) => { if (i < n - 1) return NaN; let s = 0, w = 0; for (let j = i - n + 1; j <= i; j++) { s += c[j] * v[j]; w += v[j]; } return w ? s / w : NaN; });
-    const a = vw(12), z = vw(26), m = a.map((x, i) => x - z[i]), sg = emaA(m, 9);
-    let st = 0;
-    return Object.assign(m.map((x, i) => { const up = i > 0 && x > sg[i] && m[i - 1] <= sg[i - 1], dn = i > 0 && x < sg[i] && m[i - 1] >= sg[i - 1];
-      if (up && !dn) st = 1; else if (dn && !up) st = -1; return st; }), { m, sg });
-  },
-  "SuperTrend": b => {                                  // ATR 10 x 3 around HL2
-    const [h, l, c] = cols(b), a = rmaA(trA(h, l, c), 10);
-    const fu = h.map((x, i) => (x + l[i]) / 2 + 3 * a[i]), fl = h.map((x, i) => (x + l[i]) / 2 - 3 * a[i]), st = [0];
-    for (let i = 1; i < c.length; i++) {
-      st[i] = 0;
-      if (!Number.isFinite(a[i])) continue;
-      if (Number.isFinite(fu[i - 1]) && !(fu[i] < fu[i - 1] || c[i - 1] > fu[i - 1])) fu[i] = fu[i - 1];
-      if (Number.isFinite(fl[i - 1]) && !(fl[i] > fl[i - 1] || c[i - 1] < fl[i - 1])) fl[i] = fl[i - 1];
-      const prev = st[i - 1] || -1;
-      st[i] = prev < 0 && c[i] > fu[i] ? 1 : prev > 0 && c[i] < fl[i] ? -1 : prev;
-    }
-    return Object.assign(st, { fu, fl });
-  },
-  "Squeeze Momentum": b => {                            // BB 20x2 inside KC 20x1.5 = squeeze; first bar out -> momentum sign; out when momentum turns
-    const [h, l, c] = cols(b), n = 20, basis = smaA(c, n), rng = smaA(trA(h, l, c), n);
-    const sd = c.map((_, i) => { if (i < n - 1) return NaN; const w = c.slice(i - n + 1, i + 1); return Math.sqrt(w.reduce((s, x) => s + (x - basis[i]) ** 2, 0) / n); });
-    const on = c.map((_, i) => basis[i] - 2 * sd[i] > basis[i] - 1.5 * rng[i] && basis[i] + 2 * sd[i] < basis[i] + 1.5 * rng[i]);
-    const src = c.map((x, i) => i < n - 1 ? NaN : x - ((Math.max(...h.slice(i - n + 1, i + 1)) + Math.min(...l.slice(i - n + 1, i + 1))) / 2 + basis[i]) / 2);
-    const mom = src.map((_, i) => {                     // end point of the 20-bar linear regression
-      if (i < n - 1) return NaN; const y = src.slice(i - n + 1, i + 1); if (!y.every(Number.isFinite)) return NaN;
-      let sx = 0, sy = 0, sxy = 0, sxx = 0; y.forEach((v, k) => { sx += k; sy += v; sxy += k * v; sxx += k * k; });
-      const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx); return (sy - slope * sx) / n + slope * (n - 1);
-    });
-    let st = 0; const out = [0];
-    for (let i = 1; i < c.length; i++) {
-      const rel = !on[i] && on[i - 1];
-      if (rel && mom[i] > 0) st = 1; else if (rel && mom[i] < 0) st = -1;
-      else if (st === 1 && mom[i] < mom[i - 1]) st = 0; else if (st === -1 && mom[i] > mom[i - 1]) st = 0;
-      out.push(st);
-    }
-    return Object.assign(out, { mom, on });
-  },
-};
-const closedDays = () => hist.filter(b => b.time - TZ < todayUTC() / 1000);
-function regimes(d) {                                   // per daily bar, decided by its close (-1 = not enough history)
-  const [h, l, c] = cols(d);
-  const up = h.map((x, i) => i ? x - h[i - 1] : NaN), dn = l.map((x, i) => i ? l[i - 1] - x : NaN);
-  const a = rmaA(trA(h, l, c), 14), di = dm => rmaA(dm, 14).map((x, i) => 100 * x / a[i]);
-  const p = di(up.map((u, i) => u > dn[i] && u > 0 ? u : 0)), m = di(dn.map((v, i) => v > up[i] && v > 0 ? v : 0));
-  const adx = rmaA(p.map((x, i) => 100 * Math.abs(x - m[i]) / (x + m[i])), 14), s200 = smaA(c, 200);
-  return { code: c.map((x, i) => Number.isFinite(s200[i]) && Number.isFinite(adx[i]) ? (x > s200[i]) * 2 + (adx[i] >= 25) : -1),
-    above: c.map((x, i) => pct(x, s200[i])), adx };
-}
-function regimeNow() {                                  // from the last completed daily bar
-  const d = closedDays();
-  if (d.length < 220) return null;
-  const r = regimes(d), n = d.length - 1;
-  return { code: r.code[n], above: r.above[n], adx: r.adx[n] };
-}
-// ---- the indicator in use, drawn on the 4h chart: SuperTrend over the candles, VW-MACD / Squeeze in a strip below them ----
-const LAYERS = [["ma", "200일선"], ["vol", "거래량"], ["marks", "화살표"], ["ind", "지표"], ["liq", "청산지도"], ["draw", "그림"]];
-let show = {};
-try { show = JSON.parse(localStorage.getItem("layers") || "{}"); } catch {}
-LAYERS.forEach(([k]) => show[k] ??= true);
-function applyLayers() {                                // chart series; the canvas (drawings) reads `show` in draw()
-  $("layers").innerHTML = LAYERS.map(([k, n]) => `<button class="lay${show[k] ? "" : " off"}" data-k="${k}">${n}</button>`).join("");
-  if (!chart || !series) return;
-  ma200.applyOptions({ visible: show.ma });
-  volume.applyOptions({ visible: show.vol });
-  markKey = null; drawInd(); dirty = true;
-}
-applyLayers();
-$("layers").addEventListener("click", e => { const k = e.target.dataset && e.target.dataset.k; if (!k) return;
-  show[k] = !show[k]; try { localStorage.setItem("layers", JSON.stringify(show)); } catch {} applyLayers(); });
-const src4h = () => $("iv").value === "4h" ? data : h4;
-const open4h = t => t - ((t - TZ) % 14400);             // the 4h bar a chart bar belongs to (bar times are local-shifted)
-let indS = [];
-function drawInd() {
-  indS.forEach(x => chart.removeSeries(x)); indS = [];      // an emptied pane is removed by the chart library
-  const src = src4h();
-  if (ivSec() > 14400 || !data.length || src.length < 100 || !show.ind) return fitPanes();
-  const rg = regimeNow(); if (!rg || rg.code < 0) return fitPanes();
-  const name = PICKS[rg.code], st0 = IND[name](src), ok = Number.isFinite;
-  // spread the 4h values over the chart's bars (1:1 on 4h, each 4h value over its four 1h bars on 1h)
-  const pos = new Map(src.map((b, j) => [b.time, j])), at = data.map(b => pos.get(open4h(b.time)) ?? -1);
-  const pick = arr => at.map(j => j < 0 ? NaN : arr[j]), st = Object.assign(pick(st0), Object.fromEntries(["fu", "fl", "m", "sg", "mom", "on"].filter(k => st0[k]).map(k => [k, pick(st0[k])])));
-  const t = data.map(b => b.time);
-  const add = (type, opt, pts, pane) => { const x = chart.addSeries(LightweightCharts[type], { priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...opt }, pane);
-    x.setData(pts); indS.push(x); };
-  if (name === "SuperTrend") {                          // the active band: below price while long, above while short
-    add("LineSeries", { lineWidth: 2, title: "SuperTrend", autoscaleInfoProvider: () => null },
-      t.map((x, i) => st[i] > 0 && ok(st.fl[i]) ? { time: x, value: st.fl[i], color: "#089981" } : st[i] < 0 && ok(st.fu[i]) ? { time: x, value: st.fu[i], color: "#F23645" } : { time: x }), 0);
-    return fitPanes();
-  }
-  // the indicator gets its own pane under the price pane (volume is an overlay inside the price pane, as on TradingView)
-  const first = (type, opt, pts) => add(type, opt, pts, 1);
-  if (name === "VW-MACD") {
-    first("HistogramSeries", {}, t.map((x, i) => ok(st.m[i]) && ok(st.sg[i]) ? { time: x, value: st.m[i] - st.sg[i], color: st.m[i] >= st.sg[i] ? "rgba(8,153,129,.5)" : "rgba(242,54,69,.5)" } : { time: x }));
-    add("LineSeries", { color: "#2962ff", lineWidth: 1, title: "VW-MACD" }, t.map((x, i) => ok(st.m[i]) ? { time: x, value: st.m[i] } : { time: x }), 1);
-    add("LineSeries", { color: "#ff9800", lineWidth: 1, title: "신호선" }, t.map((x, i) => ok(st.sg[i]) ? { time: x, value: st.sg[i] } : { time: x }), 1);
-  } else {                                              // momentum bars; dots on zero: orange = squeezed, grey = released
-    first("HistogramSeries", { title: "Squeeze" }, t.map((x, i) => ok(st.mom[i]) ? { time: x, value: st.mom[i],
-      color: st.mom[i] >= 0 ? (st.mom[i] >= st.mom[i - 1] ? "#089981" : "rgba(8,153,129,.45)") : (st.mom[i] <= st.mom[i - 1] ? "#F23645" : "rgba(242,54,69,.45)") } : { time: x }));
-    add("LineSeries", { lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2 }, t.map((x, i) => ({ time: x, value: 0, color: st.on[i] ? "#f0a202" : "#5d6475" })), 1);
-  }
-  fitPanes();
-}
-function fitPanes() {                                   // screen split: price 75%, indicator 25%
-  chart.panes().forEach((p, i) => p.setStretchFactor(i ? 1.7 : 5));
-}
-function h4Marks() {                                    // where the card's state changed: arrow on the bar it is traded at
-  const d = closedDays(), src = src4h(); if (d.length < 220 || src.length < 100) return [];
-  const code = regimes(d).code, byDay = new Map(d.map((b, i) => [b.time - TZ, code[i]]));
-  const sts = {}; for (const n of new Set(Object.values(PICKS).filter(v => IND[v]))) sts[n] = IND[n](src);
-  const now = Date.now() / 1000, lastT = data.length ? data[data.length - 1].time : 0, ms = []; let prev = null;
-  for (let i = 60; i < src.length; i++) {               // skip warm-up; only closed 4h bars
-    if (src[i].time - TZ + 4 * 3600 > now) break;
-    const c = byDay.get(Math.floor((src[i].time - TZ) / 86400) * 86400 - 86400), p = c === undefined || c < 0 ? 0 : sts[PICKS[c]][i];
-    const when = src[i].time + 4 * 3600;                // traded at the next 4h open (a 1h bar too)
-    if (prev !== null && p !== prev && when <= lastT) ms.push({ time: when, position: p > 0 || prev < 0 ? "belowBar" : "aboveBar", color: p > 0 ? "#089981" : p < 0 ? "#F23645" : "#8a90a0",
-      shape: p > 0 ? "arrowUp" : p < 0 ? "arrowDown" : "circle", text: p > 0 ? "롱" : p < 0 ? "숏" : prev > 0 ? "롱 끝" : "숏 끝" });
-    prev = p;
-  }
-  return ms;
-}
-let h4 = [];
-async function loadH4() {                               // closed 4h bars only
-  try { h4 = (await klines("4h")).filter(b => b.time - TZ + 4 * 3600 <= Date.now() / 1000); dirty = true; } catch { return; }
-  if (ivSec() < 14400 && chart) { drawInd(); markers(); }
-}
-setInterval(() => { if (h4.length && Date.now() / 1000 >= h4[h4.length - 1].time - TZ + 8 * 3600 + 10) loadH4(); }, 60000);
-function check(live) {
-  const sym = $("sym").value, coin = sym.replace("USDT", ""), G = "#089981", R = "#F23645", D = "#8a90a0";
-  $("ckCoin").textContent = coin;
-  const rg = regimeNow();
-  const young = hist.length && closedDays().length < 220;
-  if (!rg || h4.length < 300) { $("ckDir").innerHTML = `<div class="dim">${young ? "상장 220일 미만: 200일선 장세 판정이 안 돼 타점 없음" : "4시간봉 불러오는 중"}</div>`; ["ckCrit", "ckOrder", "ckLadder"].forEach(id => $(id).innerHTML = ""); return; }
-  const name = PICKS[rg.code], st = IND[name](h4), s = st[st.length - 1];
-  let k = st.length - 1;
-  while (k > 0 && st[k - 1] === s) k--;                 // bar whose close started the current state
-  const last = h4[h4.length - 1], hm = t => new Date((t - TZ) * 1000).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", hour12: false });
-  const fresh = k === st.length - 1, startPx = h4[k].close, nextClose = last.time + 8 * 3600;
-  const d = new Date(), qNow = `${d.getUTCFullYear()}Q${Math.floor(d.getUTCMonth() / 3) + 1}`;
-  const acct = +$("acct").value || 0, mult = +$("mult").value || 1, notional = acct * mult / 3;     // tested: wallet split over BTC/ETH/SOL
-  const min = Math.max(MIN_NOTIONAL[sym] ?? 5, (MIN_QTY[sym] ?? 0) * live), qty = Math.max(notional, min) / live;
-  const word = s > 0 ? "롱" : s < 0 ? "숏" : "현금";
-  $("ckDir").innerHTML = `<div class="verdict" style="color:${s > 0 ? G : s < 0 ? R : D}">${word}</div>`
-    + `<div class="lv-foot" style="margin:2px 0 0">${s ? `${fresh ? "방금 바뀜 → 지금 진입" : `${hm(h4[k].time + 4 * 3600)} 마감부터 ${word} (${st.length - 1 - k}봉째)`}` : "포지션 없이 쉬는 구간 · 들고 있으면 정리하고 쉬기"}</div>`;
-  const row = (nm, vl, cls = "mid") => `<div class="cr ${cls}"><span class="ic">${cls === "no" ? "!" : "·"}</span><span>${nm}</span><span class="vl">${vl}</span></div>`;
-  $("ckCrit").innerHTML = `<div class="crit">`
-    + row("장세", `${REG_NAME[rg.code]} · 200일선 ${sgn(rg.above)} · ADX ${rg.adx.toFixed(0)}`)
-    + row("이번 분기 지표", `${name} (${PICKS.q})`)
-    + (ivSec() <= 14400 ? row("차트", name === "SuperTrend" ? "캔들 위 선" : "캔들 아래 칸") : row("차트", `<a href="#" id="to4h" style="color:#2962ff">4시간 차트로 지표 보기</a>`))
-    + (!["BTCUSDT", "ETHUSDT", "SOLUSDT"].includes(sym) ? row("시험 범위", "BTC·ETH·SOL로만 검증된 규칙", "no") : "")
-    + (qNow !== PICKS.q ? row("분기 바뀜", "지표 다시 뽑아야 함", "no") : "")
-    + (notional < min ? row("최소 주문", `${min.toFixed(0)} USDT > 코인당 ${notional.toFixed(0)} → 최소로 들어감`, "no") : "")
-    + `</div>`;
-  $("ckOrder").innerHTML = s ? `<span>시장가 ${word}<b>${qty.toPrecision(3)} ${coin}</b></span><span>주문<b>${(qty * live).toFixed(1)} USDT</b></span>` : "";
-  $("ckLadder").innerHTML = `<div class="crit">`
-    + (s ? row("신호 시작가", `${fmt(startPx)} → 지금 ${fmt(live)} (${sgn(s * pct(live, startPx))})`)
-         + row("나올 때", `4시간 마감에 이 칸이 ${word}이 아니게 되면 전량 시장가로 정리`) : "")
-    + row("다음 확인", `${hm(nextClose)} (한국 1·5·9·13·17·21시 마감)`)
-    + `</div>`;
-}
-
-// 50/200-day averages as lines on the daily chart (kept out of the autoscale so they never squash the candles)
-let ma200 = null;
-function updateMAs() {                                 // 200-DAY average (the market check's line) on every interval
-  if (!ma200 || !hist.length) return;
-  const c = hist.map(b => b.close), sma = n => c.map((_, i) => i >= n - 1 ? c.slice(i - n + 1, i + 1).reduce((x, y) => x + y, 0) / n : null);
-  const s200 = sma(200), iv = $("iv").value, span = data.length > 1 ? data[1].time - data[0].time : 86400;
-  // daily/weekly bars: the average at the last day inside the bar; intraday bars: as of the last completed daily close
-  const at = b => dayAt(ivSec() >= 86400 ? b.time + span - 86400 : b.time - 86400);
-  const line = arr => data.map(b => { const i = at(b); return i >= 0 && arr[i] !== null ? { time: b.time, value: arr[i] } : null; }).filter(Boolean);
-  ma200.setData(line(s200));
-}
-
-// last daily candle with open time <= t (index into hist), -1 if none
-function dayAt(t) {
-  if (!hist.length || t < hist[0].time) return -1;
-  let lo = 0, hi = hist.length - 1;
-  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (hist[m].time <= t) lo = m; else hi = m - 1; }
-  return lo;
-}
-
-function markers() {                                   // the card's long/short arrows (4h chart only)
-  allMarks = ivSec() > 14400 ? [] : h4Marks(); markKey = null; showMarks();
-}
-
-// marker words only where they fit: when zoomed out, crowded markers keep just the arrow (the library draws the words at
-// a fixed size, so they would otherwise pile up into "매도매도")
-let allMarks = [], markKey = null;
-function showMarks() {
-  const r = chart.timeScale().getVisibleLogicalRange(); if (!r || !series) return;
-  const gap = 36 / (chart.timeScale().width() / Math.max(1, r.to - r.from)), idx = new Map(data.map((b, i) => [b.time, i]));
-  let last = -1e9;
-  const shown = allMarks.map(m => { const i = idx.get(m.time) ?? -1e9, ok = i - last >= gap; if (ok) last = i; return ok; });
-  const key = show.marks + shown.join("");
-  if (key === markKey) return;
-  markKey = key;
-  marksApi.setMarkers(show.marks ? allMarks.map((m, k) => shown[k] ? m : { ...m, text: "" }) : []);
-}
-
-// ---- 청산지도: estimated liquidation heatmap (same model as liq_map.html). Binance does not publish positions, so: every 1h bar's
-// open-interest increase = new positions at that bar's typical price, split long/short by its taker-buy share, spread over assumed
-// leverage; liquidation price = entry x (1 -/+ 1/lev +/- maintenance margin). OI drops shrink every level pro rata; a level the
-// price range crosses is removed. Binance serves only 30 days of OI history, so the map covers the last 30 days.
-const LIQ_LEV = [[10, .30], [25, .30], [50, .25], [100, .15]], LIQ_MMR = .004, LIQ_NB = 300;   // ponytail: guessed leverage mix
-let liq = null;
-// model step per chart interval: OI history comes in 5m..1d steps but only for the last 30 days, so short charts get their own
-// step (1000 bars: 5m ≈ 3.5 days, 15m ≈ 10 days, 30m ≈ 21 days) and 1h-and-longer charts all use 1h (the full 30 days, finest)
-const liqPer = () => ({ "1m": "5m", "5m": "5m", "15m": "15m", "30m": "30m" })[$("iv").value] ?? "1h";
-async function loadLiq() {
-  const per = liqPer(), step = IV_SEC[per], sym = $("sym").value, get = u => fetch("https://fapi.binance.com" + u).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
-  const oiUrl = end => `/futures/data/openInterestHist?symbol=${sym}&period=${per}&limit=500${end ? "&endTime=" + end : ""}`;
-  const [k, oiA] = await Promise.all([get(`/fapi/v1/klines?symbol=${sym}&interval=${per}&limit=1000`), get(oiUrl())]);
-  const oiB = oiA.length ? await get(oiUrl(oiA[0].timestamp - 1)).catch(() => []) : [];
-  if (sym !== $("sym").value || per !== liqPer()) return;
-  const oiAt = new Map([...oiB, ...oiA].map(o => [o.timestamp, +o.sumOpenInterest]));
-  const bars = k.map(b => ({ t: b[0], h: +b[2], l: +b[3], c: +b[4], v: +b[5], tb: +b[9] })).filter(b => oiAt.has(b.t));
-  if (bars.length < 24) return;
-  const lo = Math.min(...bars.map(b => b.l)) * .85, hi = Math.max(...bars.map(b => b.h)) * 1.15, R = (hi / lo) ** (1 / LIQ_NB);
-  const bin = p => Math.floor(Math.log(p / lo) / Math.log(R)), n = bars.length;
-  const L = new Float64Array(LIQ_NB), S = new Float64Array(LIQ_NB), grid = new Float32Array(n * LIQ_NB);
-  for (let i = 0; i < n; i++) {
-    const b = bars[i];
-    for (let j = Math.max(0, bin(b.l)); j <= Math.min(LIQ_NB - 1, bin(b.h)); j++) L[j] = S[j] = 0;   // the bar's range hit these
-    const a = oiAt.get(b.t), z = bars[i + 1] && oiAt.get(bars[i + 1].t);
-    if (z != null && z > a) {
-      const p = (b.h + b.l + b.c) / 3, usd = (z - a) * p, buy = b.v ? b.tb / b.v : .5;
-      for (const [lev, w] of LIQ_LEV) {
-        const jl = bin(p * (1 - 1 / lev + LIQ_MMR)), js = bin(p * (1 + 1 / lev - LIQ_MMR));
-        if (jl >= 0 && jl < LIQ_NB) L[jl] += usd * w * buy;
-        if (js >= 0 && js < LIQ_NB) S[js] += usd * w * (1 - buy);
-      }
-    } else if (z != null && a > 0) { const keep = z / a; for (let j = 0; j < LIQ_NB; j++) { L[j] *= keep; S[j] *= keep; } }
-    for (let j = 0; j < LIQ_NB; j++) grid[i * LIQ_NB + j] = L[j] + S[j];
-  }
-  // one pixel per (hour, price bin); drawn stretched under the candles. Brightness: 98th percentile = full; faint levels stay see-through
-  const nz = Array.from(grid).filter(v => v > 0).sort((x, y) => x - y), top = nz[Math.floor(nz.length * .98)] || 1;
-  const img = document.createElement("canvas"); img.width = n; img.height = LIQ_NB;
-  const g = img.getContext("2d"), px = g.createImageData(n, LIQ_NB), ST = [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]];
-  for (let i = 0; i < n; i++) for (let j = 0; j < LIQ_NB; j++) {
-    const v = grid[i * LIQ_NB + j]; if (!v) continue;
-    const x = Math.min(1, (v / top) ** .8), f = x * 4, s = Math.min(3, Math.floor(f)), r = f - s, c = ST[s], d = ST[s + 1], o = ((LIQ_NB - 1 - j) * n + i) * 4;
-    px.data[o] = c[0] + (d[0] - c[0]) * r; px.data[o + 1] = c[1] + (d[1] - c[1]) * r; px.data[o + 2] = c[2] + (d[2] - c[2]) * r; px.data[o + 3] = 20 + 190 * x;
-  }
-  g.putImageData(px, 0, 0);
-  liq = { sym, per, step, t0: bars[0].t / 1000 + TZ, n, img, L, S, lo, R };
-  dirty = true;
-}
-setInterval(() => loadLiq().catch(() => {}), 300000);
-function drawHeat() {
-  const cv = $("heat"), W = $("chartWrap").clientWidth, H = $("chartWrap").clientHeight, dpr = window.devicePixelRatio || 1;
-  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
-  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
-  if (!show.liq || !liq || liq.sym !== $("sym").value) return;
-  const pw = chart.timeScale().width(), ph = chart.panes()[0].getHeight(), x0 = timeToX(liq.t0), x1 = timeToX(liq.t0 + liq.n * liq.step);
-  if (x0 === null || x1 === null) return;
-  const y = p => series.priceToCoordinate(p), edge = j => liq.lo * liq.R ** j;
-  g.save(); g.beginPath(); g.rect(0, 0, pw, ph); g.clip(); g.imageSmoothingEnabled = false;
-  let pm = 0; for (let j = 0; j < LIQ_NB; j++) pm = Math.max(pm, liq.L[j], liq.S[j]);
-  const xr = timeToX(data[data.length - 1].time) + 8, room = Math.min(90, pw - xr);   // profile in the empty space right of the last bar
-  for (let j = 0; j < LIQ_NB; j++) {
-    const ya = y(edge(j + 1)), yb = y(edge(j)); if (ya === null || yb === null || yb < 0 || ya > ph) continue;
-    const h = Math.max(1, yb - ya);
-    g.drawImage(liq.img, 0, LIQ_NB - 1 - j, liq.n, 1, x0, ya, x1 - x0, h);
-    if (room < 16 || !pm) continue;
-    if (liq.S[j]) { g.fillStyle = "rgba(242,54,69,.8)"; g.fillRect(pw - liq.S[j] / pm * room, ya, liq.S[j] / pm * room, h); }
-    if (liq.L[j]) { g.fillStyle = "rgba(8,153,129,.8)"; g.fillRect(pw - liq.L[j] / pm * room, ya, liq.L[j] / pm * room, h); }
-  }
-  g.restore();
-}
-function liqBox() {                                     // the biggest clusters above / below, merged into 0.5% buckets
-  const live = nowPrice();
-  if (!show.liq || !liq || liq.sym !== $("sym").value || !live) return $("liqBox").innerHTML = show.liq ? `<div class="dim">청산지도 불러오는 중</div>` : "";
-  const usd = u => u >= 1e9 ? (u / 1e9).toFixed(2) + "B" : u >= 1e6 ? (u / 1e6).toFixed(1) + "M" : (u / 1e3).toFixed(0) + "K";
-  const top = (arr, up) => { const m = new Map();
-    for (let j = 0; j < LIQ_NB; j++) { const p = liq.lo * liq.R ** (j + .5); if (!arr[j] || (up ? p <= live : p >= live)) continue;
-      const k = Math.round(Math.log(p / live) / Math.log(1.005)), c = m.get(k) || { u: 0, pw: 0 }; c.u += arr[j]; c.pw += p * arr[j]; m.set(k, c); }
-    return [...m.values()].map(c => ({ p: c.pw / c.u, u: c.u })).sort((a, b) => b.u - a.u).slice(0, 3).sort((a, b) => b.p - a.p); };
-  const near = (arr, s) => { let u = 0; for (let j = 0; j < LIQ_NB; j++) { const r = liq.lo * liq.R ** (j + .5) / live - 1; if (s * r > 0 && Math.abs(r) <= .05) u += arr[j]; } return u; };
-  const row = (c, cls) => `<div class="cr ${cls}"><span class="ic">·</span><span>${fmt(c.p)} <span class="dim">${sgn(pct(c.p, live))}</span></span><span class="vl">${usd(c.u)}</span></div>`;
-  const su = near(liq.S, 1), lu = near(liq.L, -1);
-  $("liqBox").innerHTML = `<div class="crit-h">청산지도 <span class="dim" style="font-size:11px">추정 · 큰 덩어리</span></div>`
-    + `<div class="dim" style="color:#F23645">위 = 숏 청산 (오르면 강제 매수)</div>` + top(liq.S, true).map(c => row(c, "no")).join("")
-    + `<div class="dim" style="color:#089981;margin-top:4px">아래 = 롱 청산 (내리면 강제 매도)</div>` + top(liq.L, false).map(c => row(c, "ok")).join("")
-    + `<div class="lv-foot" style="margin:6px 0 0">±5% 안: 위 숏 ${usd(su)} · 아래 롱 ${usd(lu)} → ${su > lu ? "위쪽이 두꺼움 (오르면 숏 강제매수가 상승을 키울 수 있음)" : "아래쪽이 두꺼움 (내리면 롱 강제매도가 하락을 키울 수 있음)"}.
-      "세력이 이걸 보고 사냥한다"는 실증 근거는 약함. 매매 신호로 검증 안 됨.</div>`;
-}
-
-function draw(panels = true) {
-  showMarks();     // panels = also refresh the card (not needed when only the view moved)
-  drawHeat();
-  // size from the wrapper, never from the canvas itself (that feeds back and grows without bound)
-  const cv = $("overlay"), W = $("chartWrap").clientWidth, H = $("chartWrap").clientHeight, dpr = window.devicePixelRatio || 1;
-  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
-  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
-  // the user's drawings, kept inside the price pane
-  drawUI(g, W, H);
-  drawCountdown(g, W);
-  $("logBtn").classList.toggle("on", $("scale").value === "1");
-  $("fitBtn").classList.toggle("on", chart.priceScale("right").options().autoScale);
-  if (panels) { signal(); liqBox();$("clock").textContent = new Date().toLocaleTimeString("en-GB") + ` (UTC${TZ >= 0 ? "+" : "−"}${Math.abs(TZ / 3600)})`; }
-}
-// TradingView's bar-close countdown: a box under the last-price label, same colour
-function drawCountdown(g, W) {
-  const last = data[data.length - 1], y = series.priceToCoordinate(last.close), x = chart.timeScale().width();
-  if (y === null || y < 0 || y > chart.panes()[0].getHeight()) return;
-  const s = Math.max(0, Math.floor(last.time - TZ + IV_SEC[$("iv").value] - Date.now() / 1000)), p = n => String(n).padStart(2, "0");
-  const txt = (s >= 86400 ? Math.floor(s / 86400) + "d " : "") + (s >= 3600 ? p(Math.floor(s / 3600) % 24) + ":" : "") + p(Math.floor(s / 60) % 60) + ":" + p(s % 60);
-  g.fillStyle = last.close >= last.open ? UP : DN; g.fillRect(x, Math.round(y) + 10, W - x, 16);
-  g.fillStyle = "#fff"; g.font = "12px -apple-system, BlinkMacSystemFont, sans-serif"; g.textBaseline = "middle"; g.fillText(txt, x + 8, Math.round(y) + 18);
-  g.textBaseline = "alphabetic";
-}
-
-function initChart() {
-  if (chart) chart.remove();
-  allMarks = []; markKey = null; indS = [];
-  // every value below is TradingView's own dark-theme chart property (paneProperties / scalesProperties / candleStyle)
-  const L = LightweightCharts.LineStyle, intra = /[mh]$/.test($("iv").value);
-  const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const cross = { color: "#9c9c9c", style: L.Dashed, width: 1, labelBackgroundColor: "#363636" };
-  chart = LightweightCharts.createChart($("chart"), {
-    autoSize: true,
-    grid: { vertLines: { color: "rgba(242,242,242,.2)", style: L.Dotted }, horzLines: { color: "rgba(242,242,242,.2)", style: L.Dotted } },
-    rightPriceScale: { borderVisible: false, scaleMargins: { top: .1, bottom: .08 }, mode: +$("scale").value },
-    // see-through background: #chartWrap is black and the liquidation heatmap sits under the candles
-    layout: { background: { color: "rgba(0,0,0,0)" }, textColor: "#b8b8b8", fontSize: 12, fontFamily: '-apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
-      panes: { separatorColor: "#222222", separatorHoverColor: "rgba(41,98,255,.25)" } },
-    timeScale: { borderVisible: false, timeVisible: intra, rightOffset: 10, barSpacing: 6 },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: cross, horzLine: cross },
-    localization: { locale: "en-US", priceFormatter: fmt,
-      timeFormatter: t => { const d = new Date(t * 1000), s = `${DAY[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]} '${String(d.getUTCFullYear()).slice(2)}`;
-        return intra ? s + "   " + d.toISOString().slice(11, 16) : s; } },   // bar times are already shifted to local time
-  });
-  series = chart.addSeries(LightweightCharts.CandlestickSeries, { priceFormat: pfmt(),
-    upColor: UP, downColor: DN, borderUpColor: UP, borderDownColor: DN, wickUpColor: UP, wickDownColor: DN, priceLineStyle: L.Dotted,
-  });
-  const maOpt = { lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: () => null };
-  marksApi = LightweightCharts.createSeriesMarkers(series, []);
-  ma200 = chart.addSeries(LightweightCharts.LineSeries, { ...maOpt, color: "#ce93d8", lineWidth: 2 });
-  // TradingView's Volume: an overlay on the bottom 20% of the price pane
-  volume = chart.addSeries(LightweightCharts.HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "vol", priceLineVisible: false, lastValueVisible: false });
-  volume.priceScale().applyOptions({ scaleMargins: { top: .8, bottom: 0 } });
-  fitPanes();
-  chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
-  chart.subscribeCrosshairMove(prm => { hoverBar = (prm.time !== undefined && prm.seriesData.get(series)) || null; showOHLC(); dirty = true; });
-}
-
-let volume = null, marksApi = null;
-const volBar = b => ({ time: b.time, value: b.v, color: b.close >= b.open ? "rgba(38,166,154,.5)" : "rgba(239,83,80,.5)" });   // TV's volume palette, 50%
-function setAll() { series.setData(data); volume.setData(data.map(volBar)); markers(); updateMAs(); applyLayers(); }
-
-async function onRange(r) {
-  dirty = true;
-  if (!r || loadingOld || !hasMore || r.from > 30) return;
-  loadingOld = true;                                  // scrolled near the left edge: load older candles
-  try {
-    const older = await klines($("iv").value, (data[0].time - TZ) * 1000 - 1);
-    const fresh = older.filter(b => b.time < data[0].time);
-    if (!fresh.length) { hasMore = false; return; }
-    const cur = chart.timeScale().getVisibleLogicalRange();
-    data = fresh.concat(data);
-    setAll();
-    if (cur) chart.timeScale().setVisibleLogicalRange({ from: cur.from + fresh.length, to: cur.to + fresh.length });
-  } catch (e) { $("upd").textContent = "과거 데이터 오류: " + e.message; }
-  finally { loadingOld = false; }
+function setPrice(p) {
+  $("price").style.color = px == null || p >= px ? UP : DN;
+  px = p;
+  $("price").textContent = p.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  draw();
 }
 
 function connect() {
-  if (ws) { ws.onclose = null; ws.close(); }
-  ws = new WebSocket(wsUrl());
-  ws.onopen = () => $("dot").style.background = "#089981";
-  ws.onclose = () => { $("dot").style.background = "#F23645"; setTimeout(connect, 3000); };
+  if (ws) { ws.onclose = ws.onmessage = null; ws.close(); }
+  ws = new WebSocket(WS + IV[tf]);
+  ws.onopen = () => $("dot").style.background = UP;
+  ws.onclose = () => { $("dot").style.background = DN; setTimeout(connect, 3000); };
   ws.onmessage = e => {
-    const k = JSON.parse(e.data).k; if (!k) return;
-    const bar = toBar([k.t, k.o, k.h, k.l, k.c, k.v, 0, k.q, 0, 0, k.Q]), last = data[data.length - 1];
-    if (last && bar.time === last.time) data[data.length - 1] = bar; else if (!last || bar.time > last.time) { data.push(bar); if ($("iv").value === "4h") { drawInd(); markers(); } }
-    series.update(bar); volume.update(volBar(bar));
-    const prev = livePrice; livePrice = bar.close;
-    $("price").textContent = fmt(livePrice); $("price").style.color = prev === null || livePrice >= prev ? "#089981" : "#F23645";
+    const k = JSON.parse(e.data).k, a = k && D && D[k.i];
+    if (!a) return;
+    const b = { t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c };
+    if (b.t === a.at(-1).t) a[a.length - 1] = b; else if (b.t > a.at(-1).t) a.push(b);
+    series.update(candles().at(-1));
+    setPrice(b.c);
     $("upd").textContent = "실시간 " + new Date().toLocaleTimeString("ko-KR");
-    dirty = true;
   };
 }
 
-async function start() {
-  loadShapes();
-  initChart(); data = []; hist = []; h4 = []; hasMore = true; livePrice = null;
-  try {
-    $("upd").textContent = "과거 데이터 불러오는 중…";
-    [data] = await Promise.all([klines($("iv").value), loadDaily(true)]);
-    setAll();
-    const n = $("iv").value === "1d" ? 180 : 200;
-    chart.timeScale().setVisibleLogicalRange({ from: data.length - n, to: data.length + 5 });
-  } catch (e) { $("upd").textContent = "데이터 오류: " + e.message; console.error(e); return; }
-  connect(); loadH4();
-  if (!liq || liq.sym !== $("sym").value || liq.per !== liqPer()) loadLiq().catch(e => console.warn("청산지도", e));
+// 긴 봉은 전체, 4시간·1시간은 최근 200봉. 탭이 가려진 채 열리면 차트 폭이 0이라 틀어지므로 폭이 생길 때 다시 맞춘다
+let reframe = false;
+function frame() {
+  reframe = !chart.timeScale().width();
+  const n = series.data().length;                              // fitContent 는 오른쪽 여백만큼 왼쪽 봉을 잘라서 직접 범위를 준다
+  chart.timeScale().setVisibleLogicalRange(IV[tf] === "1M" ? { from: -1, to: n + 2 } : { from: n - 200, to: n + 8 });
+}
+chart.timeScale().subscribeSizeChange(() => { if (reframe) frame(); });
+
+function show() {
+  document.querySelectorAll("#tfs button").forEach(b => b.classList.toggle("on", b.textContent === tf));
+  chart.applyOptions({ timeScale: { timeVisible: IV[tf] !== "1M" } });
+  series.setData(candles());
+  frame();
+  connect();
 }
 
-["sym", "iv"].forEach(id => $(id).addEventListener("change", start));
-$("ckCrit").addEventListener("pointerdown", e => { if (e.target.id === "to4h") {   // pointerdown: the card is redrawn every tick
- e.preventDefault(); $("iv").value = "4h"; $("iv").dispatchEvent(new Event("change")); } });
-for (const [id, def] of [["acct", 200], ["mult", 1]]) {
-  try { $(id).value = localStorage.getItem(id) ?? def; } catch { $(id).value = def; }
-  for (const ev of ["input", "change"]) $(id).addEventListener(ev, () => { try { localStorage.setItem(id, $(id).value); } catch {} dirty = true; });
+// 시세를 새로 받아 봉별 구간을 다시 계산. 1시간·4시간·월봉은 모두 정시에 닫히므로 매 정시 5초 뒤에 다시
+async function refresh() {
+  let wait = 3600e3 - Date.now() % 3600e3 + 5e3;
+  try {
+    const [mo, h4, h1] = await Promise.all([get("1M"), get("4h"), get("1h")]);
+    const first = !D;
+    D = { "1M": mo, "4h": h4, "1h": h1 }; Z = SR.compute(mo, h4, h1); drawn = "";
+    if (first) show();
+    else { const r = chart.timeScale().getVisibleLogicalRange(); series.setData(candles()); if (r) chart.timeScale().setVisibleLogicalRange(r); }
+    if (px == null) setPrice(h1.at(-1).c); else draw();
+    $("upd").textContent = "갱신 " + new Date().toLocaleTimeString("ko-KR");
+  } catch (e) { $("upd").textContent = "데이터 오류: " + e.message + " (30초 뒤 다시)"; wait = 30e3; }
+  setTimeout(refresh, wait);
 }
-$("scale").addEventListener("change", () => { chart.priceScale("right").applyOptions({ mode: +$("scale").value }); dirty = true; });
-// the overlay is redrawn in the same frame the chart's view changes (zoom, scroll, price-axis drag, autoscale),
-// so boxes and lines never lag behind the candles; the status strip / panels refresh on data changes and twice a second
-let lastSig = "";
-const viewSig = () => { const r = chart.timeScale().getVisibleLogicalRange(), ref = data[data.length - 1].close;
-  return [r && r.from, r && r.to, series.priceToCoordinate(ref), series.priceToCoordinate(ref * 1.05), $("chartWrap").clientWidth, $("chartWrap").clientHeight].join("|"); };
-(function loop() {
-  if (series && data.length && hist.length) {
-    const sig = viewSig();
-    if (dirty) { dirty = false; lastSig = sig; draw(true); }
-    else if (sig !== lastSig) { lastSig = sig; draw(false); }
-  }
-  requestAnimationFrame(loop);
-})();
-setInterval(() => dirty = true, 500);
-$("logBtn").addEventListener("click", () => { $("scale").value = $("scale").value === "1" ? "0" : "1"; $("scale").dispatchEvent(new Event("change")); });
-// TradingView's date-range buttons: switch to that range's interval (nearest of ours), then show that much time up to the last bar
-const RANGES = [["5D", 5], ["1M", 30], ["3M", 91], ["6M", 182], ["YTD", "ytd"], ["1Y", 365], ["5Y", 1826], ["All", 0]];
-const RANGE_IV = { "5D": "5m", "1M": "30m", "3M": "1h", "6M": "2h", "YTD": "1d", "1Y": "1d", "5Y": "1w", All: "1w" };   // TV: 5m 30m 1h 2h 1D 1D 1W 1M (no 1M bars here)
-$("ranges").innerHTML = RANGES.map(([n]) => `<button data-r="${n}">${n}</button>`).join("");
-$("ranges").addEventListener("click", async e => {
-  const n = e.target.dataset.r, d = new Map(RANGES).get(n); if (d === undefined) return;
-  if ($("iv").value !== RANGE_IV[n]) {                 // new chart: wait until it is laid out, or the range is ignored
-    $("iv").value = RANGE_IV[n]; saveView(); await start(); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); }
-  if (!data.length) return;
-  if (!d) return chart.timeScale().fitContent();
-  const to = data[data.length - 1].time, from = d === "ytd" ? Date.UTC(new Date().getUTCFullYear(), 0, 1) / 1000 + TZ : to - d * 86400;
-  // before the first loaded bar = a negative logical index; onRange then loads the older bars into that space
-  const l = from >= data[0].time ? data.findIndex(b => b.time >= from) : (from - data[0].time) / barSec();
-  chart.timeScale().setVisibleLogicalRange({ from: l, to: data.length - 1 + 10 });
-});
-$("fitBtn").addEventListener("click", () => { chart.priceScale("right").applyOptions({ autoScale: true }); chart.timeScale().scrollToRealTime(); });
-// ---- mouse: a press is a pan, a drawing (tool active), a ruler (Shift / measure tool) or a drag of the selected drawing.
-// Panning is switched off for the press when it is not a pan (set in the capture phase, before the chart library sees it).
-const rel = e => { const r = $("chartWrap").getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-const inPane = (x, yy) => x >= 0 && x < chart.timeScale().width() && yy >= 0 && yy < chart.panes()[0].getHeight();
-const lockPan = on => chart.applyOptions({ handleScroll: { pressedMouseMove: !on, horzTouchDrag: !on, vertTouchDrag: !on } });
-let press = null;
-$("chartWrap").addEventListener("pointerdown", e => {
-  if (e.button !== 0 || !series || !data.length || e.target.closest("button, #kbd")) return;
-  closeMenu();
-  const [x, yy] = rel(e), ps = chart.priceScale("right");
-  press = { x, y: yy, mode: "pan", wasAuto: ps.options().autoScale };
-  if (inPane(x, yy)) {
-    if (tool === "measure" || meas || (e.shiftKey && !tool)) {   // 1st click starts, 2nd fixes, the next one removes it
-      press.mode = "measure";
-      if (meas && meas.b) press.clear = true;
-      else if (!meas) { const pt = pointAt(x, yy, e); if (pt) { meas = { a: pt }; press.fresh = true; } }
-    } else if (tool) {
-      press.mode = "draw";
-      if (!pending && !["h", "v", "del"].includes(tool)) { const pt = pointAt(x, yy, e); if (pt) { pending = { type: tool, t1: pt.t, p1: pt.p }; press.fresh = true; } }
-    } else {
-      const a = hitAnchor(x, yy), i = a ? sel : hitShape(x, yy);
-      sel = i; dirty = true;
-      if (i >= 0) Object.assign(press, { mode: a ? "anchor" : "move", a, orig: JSON.parse(JSON.stringify(shapes[i])), moved: false });
-    }
-  }
-  if (press.mode !== "pan") lockPan(true);
-  // free drag in every direction: the library only scrolls the price axis while auto-fit is off; it is switched back on in
-  // pointerup when the drag was horizontal (auto or a double-click on the price axis re-fits)
-  else if (press.wasAuto) ps.applyOptions({ autoScale: false });
-}, true);
-window.addEventListener("pointermove", e => {
-  if (!series || !data.length) return;
-  const [x, yy] = rel(e);
-  mouse = pointAt(x, yy, e, pending || (meas && !meas.b ? meas.a : null));
-  if (press && (press.mode === "move" || press.mode === "anchor") && (press.moved || Math.hypot(x - press.x, yy - press.y) > 2)) {
-    if (!press.moved) { const now = shapes[sel]; shapes[sel] = press.orig; snapUndo(); shapes[sel] = now; press.moved = true; }
-    const s = shapes[sel];
-    if (press.mode === "move") shiftShape(s, press.orig, x - press.x, yy - press.y);
-    else if (mouse) { if (press.a.t) s[press.a.t] = mouse.t; if (press.a.p) s[press.a.p] = mouse.p; }
-  }
-  if (!press) $("chartWrap").dataset.cur = !inPane(x, yy) ? "" : tool ? "crosshair" : hitAnchor(x, yy) ? "move" : hitShape(x, yy) >= 0 ? "pointer" : "crosshair";
-  if (pending || tool || meas || press) lastSig = "";
-});
-window.addEventListener("pointerup", e => {
-  if (!press) return;
-  const [x, yy] = rel(e), moved = Math.hypot(x - press.x, yy - press.y) > 5, m = press.mode;
-  if (m === "pan") { if (press.wasAuto && Math.abs(yy - press.y) < 6) chart.priceScale("right").applyOptions({ autoScale: true }); }
-  else if (m === "measure") {
-    if (press.clear) { meas = null; if (tool === "measure") setTool(""); }
-    else if (meas && !meas.b && (moved || !press.fresh)) { const pt = pointAt(x, yy, e); if (pt) meas.b = pt; if (tool === "measure") setTool(""); }
-  } else if (m === "draw") {
-    const pt = pointAt(x, yy, e, pending), done = () => { pending = null; if (!keepDraw) setTool(""); };
-    if (pt && tool === "del") { const i = hitShape(x, yy); if (i >= 0) { snapUndo(); shapes.splice(i, 1); saveShapes(); } }
-    else if (pt && (tool === "h" || tool === "v")) { snapUndo(); shapes.push(tool === "h" ? { type: "h", p1: pt.p } : { type: "v", t1: pt.t }); done(); sel = shapes.length - 1; saveShapes(); }
-    else if (pt && pending && (moved || !press.fresh)) { snapUndo(); shapes.push({ ...pending, t2: pt.t, p2: pt.p }); done(); sel = shapes.length - 1; saveShapes(); }
-  } else if (press.moved) saveShapes();
-  if (m !== "pan") lockPan(false);
-  press = null; dirty = true;
-}, true);
-$("toRT").addEventListener("click", () => chart.timeScale().scrollToRealTime());
-// right-click: a drawing's menu, or the chart's; right-click while drawing cancels it
-function openMenu(cx, cy, items) {
-  const m = $("menu");
-  m.innerHTML = items.map(([n, k], i) => `<div data-i="${i}"><span>${n}</span><kbd>${k}</kbd></div>`).join("");
-  m.hidden = false; m.style.left = Math.min(cx, innerWidth - m.offsetWidth - 8) + "px"; m.style.top = Math.min(cy, innerHeight - m.offsetHeight - 8) + "px";
-  m.onclick = e => { const d = e.target.closest("[data-i]"); if (!d) return; closeMenu(); items[+d.dataset.i][2](); };
-}
-const closeMenu = () => { $("menu").hidden = true; };
-window.addEventListener("pointerdown", e => { if (!e.target.closest("#menu")) closeMenu(); }, true);
-$("chartWrap").addEventListener("contextmenu", e => {
-  e.preventDefault(); if (!series || !data.length) return;
-  const [x, yy] = rel(e); if (!inPane(x, yy)) return;
-  if (tool || pending || meas) { setTool(""); meas = null; return; }
-  const i = hitShape(x, yy); sel = i; dirty = true;
-  openMenu(e.clientX, e.clientY, i >= 0 ? [["복제", "", () => cloneShape(i)], ["삭제", "Del", removeSel]]
-    : [["차트 초기화", "⌥R", resetView], [show.draw ? "그림 숨기기" : "그림 보이기", "⌘⌥H", toggleDraw], ["그림 모두 삭제", "", clearAll]]);
-});
-document.querySelectorAll("#tools button[data-tool]").forEach(b => b.addEventListener("click", () => setTool(b.dataset.tool)));
-$("magBtn").addEventListener("click", () => { magnet = !magnet; dirty = true; });
-$("keepBtn").addEventListener("click", () => { keepDraw = !keepDraw; dirty = true; });
-$("eyeBtn").addEventListener("click", toggleDraw);
-$("clearDraw").addEventListener("click", clearAll);
-// type on the chart: digits open "Change interval", letters open symbol search; Enter applies (TradingView's keyboard flow)
-const IVS = INTERVALS.map(([v, m]) => [new RegExp(`^(${v}|${m}${m === 1440 ? "|d" : m === 10080 ? "|w" : ""})$`), v,
-  m < 60 ? `${m} minute${m > 1 ? "s" : ""}` : m < 1440 ? `${m / 60} hour${m > 60 ? "s" : ""}` : m === 1440 ? "1 day" : "1 week"]);
-let SYMS = [["BTCUSDT", "Bitcoin"], ["ETHUSDT", "Ethereum"], ["SOLUSDT", "Solana"]];   // replaced by every perpetual in loadSymbols
-const setSel = (id, v) => { if ($(id).value !== v) { $(id).value = v; $(id).dispatchEvent(new Event("change")); } };
-function kbdMatch() {
-  const v = $("kbdIn").value.trim().toLowerCase();
-  return $("kbd").dataset.mode === "iv" ? IVS.filter(([r]) => r.test(v))
-    : (m => m.filter(([s]) => s.toLowerCase().startsWith(v)).concat(m.filter(([s]) => !s.toLowerCase().startsWith(v))))(SYMS.filter(([s]) => s.toLowerCase().includes(v))).slice(0, 30);
-}
-function kbdHint() {
-  const iv = $("kbd").dataset.mode === "iv", m = kbdMatch();
-  $("kbd").querySelector(".kh").textContent = iv ? (m.length ? m[0][2] : "없는 봉 (1m 5m 15m 30m 1h 2h 4h 6h 12h D W)") : m.length ? "" : "바이낸스 USDT 무기한에 없는 코인";
-  $("kbd").querySelector(".kl").innerHTML = iv ? "" : m.map(([s, n], i) => `<div data-i="${i}">${s}.P<span>${n} 무기한 · Binance</span></div>`).join("");
-}
-function kbdApply(i = 0) {
-  const m = kbdMatch()[i]; closeKbd(); if (!m) return;
-  $("kbd").dataset.mode === "iv" ? setSel("iv", m[1]) : setSel("sym", m[0]);
-}
-function openKbd(ch) {
-  const iv = /\d/.test(ch); $("kbd").dataset.mode = iv ? "iv" : "sym"; $("kbd").hidden = false;
-  $("kbd").querySelector(".kt").textContent = iv ? "Change interval" : "Symbol search";
-  $("kbdIn").value = ch; $("kbdIn").focus(); kbdHint();
-}
-const closeKbd = () => { $("kbd").hidden = true; $("kbdIn").blur(); };
-$("kbdIn").addEventListener("input", kbdHint);
-$("kbdIn").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter") kbdApply(); else if (e.key === "Escape") closeKbd(); });
-$("kbdIn").addEventListener("blur", () => setTimeout(() => $("kbd").hidden = true, 150));
-$("kbd").addEventListener("pointerdown", e => { const d = e.target.closest("[data-i]"); if (d) { e.preventDefault(); kbdApply(+d.dataset.i); } });
-document.addEventListener("keydown", e => {
-  if (e.key === "Escape") { closeMenu(); setTool(""); sel = -1; meas = null; dirty = true; return; }
-  if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) || !series || !data.length) return;
-  const k = e.code, mod = e.metaKey || e.ctrlKey, ts = chart.timeScale();
-  if (mod && k === "KeyZ") { e.preventDefault(); return undoRedo(e.shiftKey ? 1 : -1); }
-  if (mod && k === "KeyY") { e.preventDefault(); return undoRedo(1); }
-  if (mod && e.altKey && k === "KeyH") { e.preventDefault(); return toggleDraw(); }
-  if (mod) return;
-  if ((e.key === "Delete" || e.key === "Backspace") && sel >= 0) { e.preventDefault(); return removeSel(); }
-  if (e.altKey) {
-    if (k === "KeyR" && !e.shiftKey) { e.preventDefault(); return resetView(); }
-    if (k === "KeyH" && mouse) { e.preventDefault(); snapUndo(); shapes.push({ type: "h", p1: mouse.p }); sel = shapes.length - 1; return saveShapes(); }  // at the cursor
-    const t = { KeyT: "line", KeyV: "v", KeyF: "fib", KeyR: "rect" }[k];
-    if (t) { e.preventDefault(); return setTool(t); }
-    return;
-  }
-  if (k === "ArrowLeft" || k === "ArrowRight") { e.preventDefault(); return ts.scrollToPosition(ts.scrollPosition() + (k === "ArrowLeft" ? -1 : 1), false); }
-  if (k === "ArrowUp" || k === "ArrowDown") { e.preventDefault(); return ts.applyOptions({ barSpacing: ts.options().barSpacing * (k === "ArrowUp" ? 1.2 : 1 / 1.2) }); }
-  if (/^[a-z0-9]$/i.test(e.key)) { e.preventDefault(); openKbd(e.key); }
-});
-setInterval(() => loadDaily(false).then(() => { markers(); updateMAs(); }).catch(() => {}), 60000);
-// the view lives in the URL (?sym=SOLUSDT&iv=4h ...) so a link reopens exactly this chart
-// every Binance USDⓈ-M USDT perpetual, biggest 24h volume first; tick size and minimum order from the exchange's own filters
-async function loadSymbols() {
-  const [info, tk] = await Promise.all(["exchangeInfo", "ticker/24hr"].map(p => fetch("https://fapi.binance.com/fapi/v1/" + p).then(r => r.json())));
-  const vol = new Map(tk.map(t => [t.symbol, +t.quoteVolume]));
-  const list = info.symbols.filter(s => s.contractType === "PERPETUAL" && s.quoteAsset === "USDT" && s.status === "TRADING")
-    .sort((a, b) => (vol.get(b.symbol) || 0) - (vol.get(a.symbol) || 0));
-  for (const s of list) {
-    const f = Object.fromEntries(s.filters.map(x => [x.filterType, x])), t = +f.PRICE_FILTER.tickSize;
-    TICK[s.symbol] = t; DEC[s.symbol] = Math.max(0, Math.round(-Math.log10(t)));
-    MIN_NOTIONAL[s.symbol] = +(f.MIN_NOTIONAL?.notional ?? 5); MIN_QTY[s.symbol] = +((f.MARKET_LOT_SIZE ?? f.LOT_SIZE).minQty);
-  }
-  SYMS = list.map(s => [s.symbol, NAMES[s.baseAsset] ?? s.baseAsset]);
-  const cur = $("sym").value;
-  $("sym").innerHTML = (list.some(s => s.symbol === cur) ? "" : `<option>${cur}</option>`) + list.map(s => `<option>${s.symbol}</option>`).join("");
-  $("sym").value = cur;
-  if (series) series.applyOptions({ priceFormat: pfmt() });
-  dirty = true;
-}
-const urlSym = new URLSearchParams(location.search).get("sym");   // a coin outside the first three: add it before the URL is applied
-if (urlSym && /^[A-Z0-9]{2,30}$/.test(urlSym) && ![...$("sym").options].some(o => o.value === urlSym)) $("sym").insertAdjacentHTML("beforeend", `<option>${urlSym}</option>`);
-loadSymbols().catch(e => console.warn("코인 목록", e));
-const VIEW = ["sym", "iv", "scale"];
-new URLSearchParams(location.search).forEach((v, k) => { if (VIEW.includes(k) && [...$(k).options].some(o => o.value === v)) $(k).value = v; });
-const saveView = () => history.replaceState(null, "", "?" + new URLSearchParams(VIEW.map(k => [k, $(k).value])));
-VIEW.forEach(k => $(k).addEventListener("change", saveView));
-saveView();
-start();
+
+$("tfs").innerHTML = ORDER.map(t => `<button>${t}</button>`).join("");
+$("tfs").onclick = e => {
+  if (e.target.tagName !== "BUTTON" || !D) return;
+  tf = e.target.textContent; try { localStorage.srTf = tf; } catch {}
+  show();
+};
+$("legend").innerHTML = ORDER.map(t => `<span style="--c:${SHADE[t]}">${t}</span>`).join("");
+refresh();
 </script>
 </body>
 </html>
