@@ -11,16 +11,23 @@
   body { margin:0; display:flex; flex-direction:column; background:var(--bg); color:var(--text);
     font:14px -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, "Apple SD Gothic Neo", sans-serif; }
   header { display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; padding:6px 12px; border-bottom:1px solid var(--line); }
-  #tfs { display:flex; gap:2px; }
-  #tfs button { background:none; border:0; border-radius:4px; padding:6px 9px; font:inherit; color:var(--dim); cursor:pointer; }
+  #tfs { display:flex; flex-wrap:wrap; gap:2px; }
+  #tfs button { background:none; border:0; border-radius:4px; padding:6px 8px; font:inherit; color:var(--dim); cursor:pointer; }
   #tfs button:hover { background:var(--soft); color:var(--text); }
   #tfs button.on { background:var(--soft); color:var(--text); font-weight:600; }
+  #tfs .sep { width:1px; height:18px; margin:auto 4px; background:var(--line); }
   #price { font-weight:600; font-variant-numeric:tabular-nums; }
   #st { color:var(--dim); font-size:12px; }
   #dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#F23645; margin-right:5px; }
-  #legend { display:flex; flex-wrap:wrap; gap:4px 12px; margin-left:auto; font-size:12px; color:var(--dim); }
-  #legend span::before { content:""; display:inline-block; width:18px; height:3px; margin-right:5px; vertical-align:middle; background:var(--c); }
-  #chart { flex:1; min-height:0; }
+  #wrap { position:relative; flex:1; min-height:0; }
+  #chart { position:absolute; inset:0; }
+  #legend { position:absolute; z-index:3; top:8px; left:10px; right:110px; display:flex; flex-wrap:wrap; gap:4px; pointer-events:none; }
+  #legend button { pointer-events:auto; display:inline-flex; align-items:center; gap:6px; padding:3px 8px; border:1px solid var(--line); border-radius:4px;
+    background:rgba(255,255,255,.92); color:var(--text); font:12px -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; cursor:pointer; }
+  #legend button::before { content:""; width:16px; height:3px; border-radius:2px; background:var(--c); }
+  #legend button:hover { border-color:#b2b5be; }
+  #legend button[aria-pressed="false"] { color:var(--dim); text-decoration:line-through; }
+  #legend button[aria-pressed="false"]::before { background:var(--line); }
 </style>
 </head>
 <body>
@@ -29,9 +36,8 @@
   <div id="tfs"></div>
   <span id="price">-</span>
   <span id="st"><span id="dot"></span><span id="upd">불러오는 중…</span></span>
-  <div id="legend" title="봉마다 아직 안 깨진 지지·저항 (현재가 위·아래로 가까운 3개씩). 진할수록 긴 봉."></div>
 </header>
-<div id="chart"></div>
+<div id="wrap"><div id="chart"></div><div id="legend" title="지지·저항 선 켜고 끄기 (봉마다 현재가 위·아래로 가까운 3개씩)"></div></div>
 
 <script id="sr">
 // 봉별 지지·저항. btc_levels.py 와 같은 규칙이고, 같은 값을 내는지 check_sr_js.py 로 확인한다.
@@ -154,15 +160,17 @@ const SR = (() => {
 
 <script>
 const $ = id => document.getElementById(id);
-const ORDER = ["1년", "6개월", "3개월", "1개월", "4시간", "1시간"];
-const SHADE = { "1년": "#000000", "6개월": "#262626", "3개월": "#4c4c4c", "1개월": "#727272", "4시간": "#989898", "1시간": "#bebebe" };   // 긴 봉 검정 → 짧은 봉일수록 밝게
-const IV = { "1년": "1M", "6개월": "1M", "3개월": "1M", "1개월": "1M", "4시간": "4h", "1시간": "1h" };   // 받아 오는 바이낸스 봉
+const ORDER = ["1년", "6개월", "3개월", "1개월", "4시간", "1시간"];             // 지지·저항을 계산하는 봉
+const VIEW = [...ORDER, "30분", "15분", "5분", "1분"];                         // 차트로 볼 수 있는 봉 (분봉은 보기만)
+// 선 색: 긴 봉은 어둡고 차가운 색, 짧은 봉은 따뜻한 색. 캔들 초록·빨강을 피했고 흰 바탕 대비 3:1 이상, 색끼리 일반 시력 색차(OKLab×100) 17 이상
+const SHADE = { "1년": "#000000", "6개월": "#1e3a8a", "3개월": "#8e24aa", "1개월": "#2a78d6", "4시간": "#8d5524", "1시간": "#c98500" };
+const IV = { "1년": "1M", "6개월": "1M", "3개월": "1M", "1개월": "1M", "4시간": "4h", "1시간": "1h", "30분": "30m", "15분": "15m", "5분": "5m", "1분": "1m" };
 const API = "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&limit=1500&interval=";
 const WS = "wss://fstream.binance.com/market/ws/btcusdt@kline_";   // USDⓈ-M 스트림은 /market/ws/ 아래 (옛 /ws/는 연결만 되고 안 옴)
 const UP = "#089981", DN = "#F23645", TZ = -new Date().getTimezoneOffset() * 60;   // 봉 시간을 내 시간(KST)으로
 const two = n => String(n).padStart(2, "0");
-let tf = "4시간", D = null, Z = null, px = null, ws = null, lines = [], drawn = "";
-try { if (ORDER.includes(localStorage.srTf)) tf = localStorage.srTf; } catch {}
+let tf = "4시간", D = null, Z = null, px = null, ws = null, lines = [], drawn = null, hide = new Set();
+try { if (VIEW.includes(localStorage.srTf)) tf = localStorage.srTf; hide = new Set(JSON.parse(localStorage.srHide || "[]")); } catch {}
 
 const chart = LightweightCharts.createChart($("chart"), {
   autoSize: true,
@@ -174,7 +182,7 @@ const chart = LightweightCharts.createChart($("chart"), {
   crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
   localization: { locale: "ko-KR", priceFormatter: v => Math.round(v).toLocaleString("en-US"), timeFormatter: t => {
     const d = new Date(t * 1000), s = `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}`;
-    return IV[tf] === "1M" ? s : `${s}-${two(d.getUTCDate())} ${two(d.getUTCHours())}:00`; } },
+    return IV[tf] === "1M" ? s : `${s}-${two(d.getUTCDate())} ${two(d.getUTCHours())}:${two(d.getUTCMinutes())}`; } },
 });
 const series = chart.addSeries(LightweightCharts.CandlestickSeries, { upColor: UP, downColor: DN, borderVisible: false,
   wickUpColor: UP, wickDownColor: DN, priceFormat: { type: "price", precision: 0, minMove: 1 } });
@@ -185,12 +193,13 @@ const get = iv => fetch(API + iv + (iv === "1M" ? "&startTime=0" : ""))
   .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(a => a.map(toBar));
 const candles = () => (SR.KEY[tf] ? SR.group(D["1M"], SR.KEY[tf]) : D[IV[tf]]).map(toCandle);
 
-// 6개 봉의 선을 모두 그린다. 여러 봉에 같은 가격이 있으면 선 하나(가장 긴 봉 색)에 이름을 모은다.
+// 켜 둔 봉의 선을 그린다. 여러 봉에 같은 가격이 있으면 선 하나(가장 긴 봉 색)에 이름을 모은다.
 // 짧은 봉 선부터 그려서 긴 봉 선이 위에 온다
 function draw() {
   if (!Z || px == null) return;
   const at = new Map();
   for (const t of ORDER) {
+    if (hide.has(t)) continue;
     const p = SR.pick(Z[t], px);
     for (const z of [...p.res, ...p.inside, ...p.sup]) { const k = Math.round(z.P); at.set(k, [...new Set([...(at.get(k) || []), t])]); }
   }
@@ -200,7 +209,7 @@ function draw() {
   drawn = key;
   lines.forEach(l => series.removePriceLine(l));
   lines = sel.map(([p, ts]) => series.createPriceLine({ price: p, color: SHADE[ts[0]], lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Solid,
-    axisLabelVisible: true, title: ts.join("·"), axisLabelColor: SHADE[ts[0]], axisLabelTextColor: ORDER.indexOf(ts[0]) < 4 ? "#ffffff" : "#131722" }));
+    axisLabelVisible: true, title: ts.join("·"), axisLabelColor: SHADE[ts[0]], axisLabelTextColor: ts[0] === "1시간" ? "#131722" : "#ffffff" }));
 }
 
 function setPrice(p) {
@@ -220,13 +229,13 @@ function connect() {
     if (!a) return;
     const b = { t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c };
     if (b.t === a.at(-1).t) a[a.length - 1] = b; else if (b.t > a.at(-1).t) a.push(b);
-    series.update(candles().at(-1));
+    if (k.i === IV[tf]) series.update(candles().at(-1));
     setPrice(b.c);
     $("upd").textContent = "실시간 " + new Date().toLocaleTimeString("ko-KR");
   };
 }
 
-// 긴 봉은 전체, 4시간·1시간은 최근 200봉. 탭이 가려진 채 열리면 차트 폭이 0이라 틀어지므로 폭이 생길 때 다시 맞춘다
+// 긴 봉은 전체, 나머지는 최근 200봉. 탭이 가려진 채 열리면 차트 폭이 0이라 틀어지므로 폭이 생길 때 다시 맞춘다
 let reframe = false;
 function frame() {
   reframe = !chart.timeScale().width();
@@ -235,9 +244,14 @@ function frame() {
 }
 chart.timeScale().subscribeSizeChange(() => { if (reframe) frame(); });
 
-function show() {
+async function show() {
+  const want = tf, iv = IV[tf];
   document.querySelectorAll("#tfs button").forEach(b => b.classList.toggle("on", b.textContent === tf));
-  chart.applyOptions({ timeScale: { timeVisible: IV[tf] !== "1M" } });
+  if (/m$/.test(iv)) {                                         // 분봉은 고를 때마다 새로 받는다 (차트로만 보고 선 계산엔 안 씀)
+    try { D[iv] = await get(iv); } catch (e) { $("upd").textContent = "데이터 오류: " + e.message; return; }
+    if (want !== tf) return;                                   // 받는 사이 다른 봉을 골랐으면 버린다
+  }
+  chart.applyOptions({ timeScale: { timeVisible: iv !== "1M" } });
   series.setData(candles());
   frame();
   connect();
@@ -249,22 +263,31 @@ async function refresh() {
   try {
     const [mo, h4, h1] = await Promise.all([get("1M"), get("4h"), get("1h")]);
     const first = !D;
-    D = { "1M": mo, "4h": h4, "1h": h1 }; Z = SR.compute(mo, h4, h1); drawn = "";
-    if (first) show();
-    else { const r = chart.timeScale().getVisibleLogicalRange(); series.setData(candles()); if (r) chart.timeScale().setVisibleLogicalRange(r); }
+    D = Object.assign(D || {}, { "1M": mo, "4h": h4, "1h": h1 }); Z = SR.compute(mo, h4, h1); drawn = null;
+    if (first) await show();
+    else if (!/m$/.test(IV[tf])) { const r = chart.timeScale().getVisibleLogicalRange(); series.setData(candles()); if (r) chart.timeScale().setVisibleLogicalRange(r); }
     if (px == null) setPrice(h1.at(-1).c); else draw();
     $("upd").textContent = "갱신 " + new Date().toLocaleTimeString("ko-KR");
   } catch (e) { $("upd").textContent = "데이터 오류: " + e.message + " (30초 뒤 다시)"; wait = 30e3; }
   setTimeout(refresh, wait);
 }
 
-$("tfs").innerHTML = ORDER.map(t => `<button>${t}</button>`).join("");
+$("tfs").innerHTML = VIEW.map(t => (t === "30분" ? '<span class="sep"></span>' : "") + `<button>${t}</button>`).join("");
 $("tfs").onclick = e => {
   if (e.target.tagName !== "BUTTON" || !D) return;
   tf = e.target.textContent; try { localStorage.srTf = tf; } catch {}
   show();
 };
-$("legend").innerHTML = ORDER.map(t => `<span style="--c:${SHADE[t]}">${t}</span>`).join("");
+$("legend").innerHTML = ORDER.map(t => `<button data-t="${t}" style="--c:${SHADE[t]}">${t}</button>`).join("");
+const paint = () => $("legend").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(!hide.has(b.dataset.t))));
+$("legend").onclick = e => {
+  const t = e.target.closest("button")?.dataset.t;
+  if (!t) return;
+  hide.has(t) ? hide.delete(t) : hide.add(t);
+  try { localStorage.srHide = JSON.stringify([...hide]); } catch {}
+  paint(); drawn = null; draw();
+};
+paint();
 refresh();
 </script>
 </body>
