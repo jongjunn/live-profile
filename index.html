@@ -62,8 +62,8 @@ const SR = (() => {
     const out = [];
     for (const x of mo) {
       const k = key(new Date(x.t)), g = out[out.length - 1];
-      if (g && g.k === k) { g.h = Math.max(g.h, x.h); g.l = Math.min(g.l, x.l); g.c = x.c; g.v += x.v || 0; g.tb += x.tb || 0; }
-      else out.push({ k, t: x.t, o: x.o, h: x.h, l: x.l, c: x.c, v: x.v || 0, tb: x.tb || 0 });   // v 거래량, tb 시장가 매수량
+      if (g && g.k === k) { g.h = Math.max(g.h, x.h); g.l = Math.min(g.l, x.l); g.c = x.c; g.v += x.v || 0; g.tb += x.tb || 0; g.q += x.q || 0; g.tq += x.tq || 0; }
+      else out.push({ k, t: x.t, o: x.o, h: x.h, l: x.l, c: x.c, v: x.v || 0, tb: x.tb || 0, q: x.q || 0, tq: x.tq || 0 });   // 거래량·시장가 매수 (BTC v·tb, USDT q·tq)
     }
     return out;
   }
@@ -187,34 +187,28 @@ const chart = LightweightCharts.createChart($("chart"), {
   rightPriceScale: { borderVisible: false, scaleMargins: { top: .08, bottom: .08 } },
   timeScale: { borderVisible: false, rightOffset: 8 },
   crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-  localization: { locale: "ko-KR", priceFormatter: v => Math.round(v).toLocaleString("en-US"), timeFormatter: t => {
+  localization: { locale: "ko-KR", timeFormatter: t => {
     const d = new Date(t * 1000), s = `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}`;
     return IV[tf] === "1M" ? s : `${s}-${two(d.getUTCDate())} ${two(d.getUTCHours())}:${two(d.getUTCMinutes())}`; } },
 });
 const series = chart.addSeries(LightweightCharts.CandlestickSeries, { upColor: UP, downColor: DN, borderVisible: false,
-  wickUpColor: UP, wickDownColor: DN, priceFormat: { type: "price", precision: 0, minMove: 1 } });
+  wickUpColor: UP, wickDownColor: DN, priceFormat: { type: "custom", formatter: v => Math.round(v).toLocaleString("en-US"), minMove: 1 } });
 
-const toBar = k => ({ t: +k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5], tb: +k[9] });   // k[9] = 시장가 매수 BTC 수량
+const toBar = k => ({ t: +k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5], tb: +k[9], q: +k[7], tq: +k[10] });   // 시장가 매수: k[9] BTC, k[10] USDT
 const toCandle = b => ({ time: b.t / 1000 + TZ, open: b.o, high: b.h, low: b.l, close: b.c });
 const get = iv => fetch(API + iv + (iv === "1M" ? "&startTime=0" : ""))
   .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(a => a.map(toBar));
 const bars = () => SR.KEY[tf] ? SR.group(D["1M"], SR.KEY[tf]) : D[IV[tf]];
 
-// 아래 칸: 봉마다 시장가 매수(롱 에너지, 0 위 초록)와 시장가 매도(숏 에너지, 0 아래 빨강). 단위 BTC
-const kfmt = v => { v = Math.abs(v); return v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(1) + "K" : v.toFixed(0); };
-const eOpt = color => ({ color, priceFormat: { type: "custom", formatter: kfmt, minMove: 1 }, lastValueVisible: false, priceLineVisible: false });
-const buyS = chart.addSeries(LightweightCharts.HistogramSeries, eOpt("rgba(8,153,129,.75)"), 1);
-const sellS = chart.addSeries(LightweightCharts.HistogramSeries, eOpt("rgba(242,54,69,.75)"), 1);
-chart.panes()[1].setStretchFactor(.3);
-const eBar = x => [{ time: x.t / 1000 + TZ, value: x.tb }, { time: x.t / 1000 + TZ, value: x.tb - x.v }];
-function setAll() {
-  const b = bars();
-  series.setData(b.map(toCandle)); buyS.setData(b.map(x => eBar(x)[0])); sellS.setData(b.map(x => eBar(x)[1]));
-}
-function setLast() {
-  const x = bars().at(-1), [u, d] = eBar(x);
-  series.update(toCandle(x)); buyS.update(u); sellS.update(d);
-}
+// 아래 칸: 봉마다 시장가 매수 − 시장가 매도 (USDT). 0 위 초록 = 매수 에너지가 더 셈, 0 아래 빨강 = 매도 에너지가 더 셈
+const cfmt = v => { const a = Math.abs(v), s = v > 0 ? "+" : v < 0 ? "−" : "";
+  return s + (a >= 1e9 ? (a / 1e9).toFixed(1) + "B" : a >= 1e6 ? (a / 1e6).toFixed(1) + "M" : a >= 1e3 ? (a / 1e3).toFixed(0) + "K" : a.toFixed(0)); };
+const deltaS = chart.addSeries(LightweightCharts.HistogramSeries,
+  { priceFormat: { type: "custom", formatter: cfmt, minMove: 1 }, lastValueVisible: false, priceLineVisible: false }, 1);
+chart.panes()[1].setStretchFactor(.4);
+const eBar = x => { const d = 2 * x.tq - x.q; return { time: x.t / 1000 + TZ, value: d, color: d >= 0 ? "rgba(8,153,129,.85)" : "rgba(242,54,69,.85)" }; };
+function setAll() { const b = bars(); series.setData(b.map(toCandle)); deltaS.setData(b.map(eBar)); }
+function setLast() { const x = bars().at(-1); series.update(toCandle(x)); deltaS.update(eBar(x)); }
 
 // 켜 둔 봉의 선을 그린다. 여러 봉에 같은 가격이 있으면 선 하나(가장 긴 봉 색)에 이름을 모은다.
 // 짧은 봉 선부터 그려서 긴 봉 선이 위에 온다
@@ -250,7 +244,7 @@ function connect() {
   ws.onmessage = e => {
     const k = JSON.parse(e.data).k, a = k && D && D[k.i];
     if (!a) return;
-    const b = { t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, v: +k.v, tb: +k.V };
+    const b = { t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, v: +k.v, tb: +k.V, q: +k.q, tq: +k.Q };
     if (b.t === a.at(-1).t) a[a.length - 1] = b; else if (b.t > a.at(-1).t) a.push(b);
     if (k.i === IV[tf]) setLast();
     setPrice(b.c);
@@ -343,7 +337,7 @@ async function readEnergy() {
       it("가격", px1, "#b2b5be"),
       g == null ? "<span>미결제약정 -</span>" : it("미결제약정", `${g >= .005 ? "확대" : g <= -.005 ? "축소" : "보합"} ${sgn(g * 100, 2)}%`, "#b2b5be"),
       f8 == null ? "<span>펀딩 -</span>" : it("펀딩", `${f8 >= .0003 ? "롱 보유 비용 높음" : f8 <= -.0003 ? "숏 보유 비용 높음" : "보통"} ${sgn(f8 * 100, 3)}%/8h`, "#b2b5be"),
-      `<span class="key">아래 칸 <i style="background:${UP}"></i>시장가 매수(롱) <i style="background:${DN}"></i>시장가 매도(숏)</span>`].join("");
+      `<span class="key">아래 칸 = 시장가 매수 − 매도 <i style="background:${UP}"></i>매수가 셈 <i style="background:${DN}"></i>매도가 셈</span>`].join("");
   } catch (e) { $("energy").innerHTML = `<span><b>에너지</b> 오류: ${e.message} (1분 뒤 다시)</span>`; wait = 60e3; }
   setTimeout(readEnergy, wait);
 }
