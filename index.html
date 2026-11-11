@@ -27,12 +27,12 @@
   #legend button:hover { border-color:#b2b5be; }
   #legend button[aria-pressed="false"] { color:var(--dim); text-decoration:line-through; }
   #legend button[aria-pressed="false"]::before { background:var(--line); }
-  #energy { display:flex; flex-wrap:wrap; align-items:center; gap:4px 16px; padding:6px 12px; border-top:1px solid var(--line); font-size:12px; color:var(--dim); }
-  #energy span { display:inline-flex; align-items:center; gap:5px; }
-  #energy b { color:var(--text); font-weight:600; }
-  #energy i { width:8px; height:8px; border-radius:50%; }
-  #energy .key { margin-left:auto; }
-  #energy .key i { border-radius:1px; width:10px; }
+  #trend { display:flex; flex-wrap:wrap; align-items:center; gap:4px 16px; padding:6px 12px; border-top:1px solid var(--line); font-size:12px; color:var(--dim); }
+  #trend span { display:block; }
+  #trend b { color:var(--text); font-weight:600; }
+  #trend i { display:inline-block; width:8px; height:8px; border-radius:50%; margin:0 5px 0 2px; }
+  #trend .key { margin-left:auto; }
+  #trend .key i { border-radius:1px; width:10px; }
 </style>
 </head>
 <body>
@@ -43,7 +43,7 @@
   <span id="st"><span id="dot"></span><span id="upd">불러오는 중…</span></span>
 </header>
 <div id="wrap"><div id="chart"></div><div id="legend" title="지지·저항 선 켜고 끄기 (봉마다 현재가 위·아래로 가까운 3개씩)"></div></div>
-<div id="energy" title="보고 있는 차트 봉의 끝난 봉 4개 기준 (1분 차트는 5분봉, 1개월 이상은 일봉). 문턱 숫자는 검증 전 고정값이다."><span><b>에너지</b> 불러오는 중…</span></div>
+<div id="trend" title="v3 봇과 같은 추세 규칙 (끝난 봉 기준). 일봉: 200일선 위 + 직전 55일 최고 종가 돌파면 켜짐, 직전 20일 최저 종가나 200일선 아래로 마감하면 꺼짐. 4시간: 종가가 200EMA±0.5ATR 밖 + 200EMA 6봉 기울기 같은 방향. 2019~2025 시험에서 비용 뒤 돈이 된 건 이 둘(롱만)뿐이고, 숏은 롱만보다 나빠 뺐다."><span><b>추세</b> 불러오는 중…</span></div>
 
 <script id="sr">
 // 봉별 지지·저항. btc_levels.py 와 같은 규칙이고, 같은 값을 내는지 check_sr_js.py 로 확인한다.
@@ -62,8 +62,8 @@ const SR = (() => {
     const out = [];
     for (const x of mo) {
       const k = key(new Date(x.t)), g = out[out.length - 1];
-      if (g && g.k === k) { g.h = Math.max(g.h, x.h); g.l = Math.min(g.l, x.l); g.c = x.c; g.v += x.v || 0; g.tb += x.tb || 0; g.q += x.q || 0; g.tq += x.tq || 0; }
-      else out.push({ k, t: x.t, o: x.o, h: x.h, l: x.l, c: x.c, v: x.v || 0, tb: x.tb || 0, q: x.q || 0, tq: x.tq || 0 });   // 거래량·시장가 매수 (BTC v·tb, USDT q·tq)
+      if (g && g.k === k) { g.h = Math.max(g.h, x.h); g.l = Math.min(g.l, x.l); g.c = x.c; g.q += x.q || 0; }
+      else out.push({ k, t: x.t, o: x.o, h: x.h, l: x.l, c: x.c, q: x.q || 0 });   // q = 거래대금(USDT)
     }
     return out;
   }
@@ -165,6 +165,49 @@ const SR = (() => {
 
   return { KEY, group, compute, pick, atr };
 })();
+
+// 추세 상태 = combo_v2.trend_state 와 같은 규칙 (v3 봇 E3: 일봉 반 + 4시간 반, 롱만). 입력은 끝난 봉. st = 봉마다 상태 (1 상승, −1 하락, 0 중립)
+const TR = (() => {
+  // 4시간: 200EMA·ATR14·6봉 기울기. 켜짐 = 종가가 EMA±0.5ATR 밖 + 기울기 같은 방향, 유지 = 종가가 EMA∓0.5ATR 안 넘음 + 기울기 반대 아님
+  function h4(b) {
+    const n = b.length, A = SR.atr(b), E = [], st = [];
+    let s = 0;
+    for (let t = 0; t < n; t++) {
+      const c = b[t].c;
+      E[t] = t ? E[t - 1] + (c - E[t - 1]) * 2 / 201 : c;
+      if (t < 200 || !Number.isFinite(A[t])) s = 0;
+      else {
+        const sl = (E[t] - E[t - 6]) / A[t], hi = E[t] + .5 * A[t], lo = E[t] - .5 * A[t];
+        if (s === 1 && !(c > lo && sl >= 0)) s = 0;
+        else if (s === -1 && !(c < hi && sl <= 0)) s = 0;
+        if (s === 0) s = c > hi && sl > 0 ? 1 : c < lo && sl < 0 ? -1 : 0;
+      }
+      st[t] = s;
+    }
+    return { st, s, ema: E[n - 1], atr: A[n - 1], up: E[n - 1] > E[n - 7] };
+  }
+  // 일봉: 200일선 위 + 직전 55일 최고 종가 돌파면 켜짐, 직전 20일 최저 종가 아래나 200일선 아래로 마감하면 꺼짐 (하락은 대칭)
+  // on·off = 다음 일봉 종가가 넘어야 바뀌는 가격. 200일선은 그 종가까지 넣어 계산하므로 "최근 199일 평균 위"와 같다
+  function d1(b) {
+    const c = b.map(x => x.c), n = c.length, st = [];
+    const mean = (i, j) => { let s = 0; for (let k = i; k < j; k++) s += c[k]; return s / (j - i); };
+    const hi = (t, k) => Math.max(...c.slice(t - k, t)), lo = (t, k) => Math.min(...c.slice(t - k, t));
+    let s = 0;
+    for (let t = 0; t < n; t++) {
+      if (t < 200) s = 0;
+      else {
+        const m = mean(t - 199, t + 1), reg = c[t] > m ? 1 : c[t] < m ? -1 : 0;
+        if (s === 1 && (c[t] < lo(t, 20) || reg < 0)) s = 0;
+        else if (s === -1 && (c[t] > hi(t, 20) || reg > 0)) s = 0;
+        if (s === 0) s = c[t] > hi(t, 55) && reg > 0 ? 1 : c[t] < lo(t, 55) && reg < 0 ? -1 : 0;
+      }
+      st[t] = s;
+    }
+    const m = mean(n - 199, n);
+    return { st, s, on: Math.max(hi(n, 55), m), off: Math.max(lo(n, 20), m) };
+  }
+  return { h4, d1 };
+})();
 </script>
 
 <script>
@@ -198,21 +241,26 @@ const chart = LightweightCharts.createChart($("chart"), {
 const series = chart.addSeries(LightweightCharts.CandlestickSeries, { upColor: UP, downColor: DN, borderVisible: false,
   wickUpColor: UP, wickDownColor: DN, priceFormat: { type: "custom", formatter: v => Math.round(v).toLocaleString("en-US"), minMove: 1 } });
 
-const toBar = k => ({ t: +k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5], tb: +k[9], q: +k[7], tq: +k[10] });   // 시장가 매수: k[9] BTC, k[10] USDT
+const toBar = k => ({ t: +k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], q: +k[7] });   // q = 거래대금(USDT)
 const toCandle = b => ({ time: b.t / 1000 + TZ, open: b.o, high: b.h, low: b.l, close: b.c });
 const get = iv => fetch(API + iv + (iv === "1M" ? "&startTime=0" : ""))
   .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(a => a.map(toBar));
 const bars = () => SR.KEY[tf] ? SR.group(D["1M"], SR.KEY[tf]) : D[IV[tf]];
 
-// 아래 칸: 봉마다 시장가 매수 − 시장가 매도 (USDT). 0 위 초록 = 매수 에너지가 더 셈, 0 아래 빨강 = 매도 에너지가 더 셈
-const cfmt = v => { const a = Math.abs(v), s = v > 0 ? "+" : v < 0 ? "−" : "";
-  return s + (a >= 1e9 ? (a / 1e9).toFixed(1) + "B" : a >= 1e6 ? (a / 1e6).toFixed(1) + "M" : a >= 1e3 ? (a / 1e3).toFixed(0) + "K" : a.toFixed(0)); };
-const deltaS = chart.addSeries(LightweightCharts.HistogramSeries,
-  { priceFormat: { type: "custom", formatter: cfmt, minMove: 1 }, lastValueVisible: false, priceLineVisible: false }, 1);
+// 아래 칸: 거래량(USDT). 오른 봉 초록·내린 봉 빨강, 평소(회색 선 = 직전 20봉 중앙값)의 1.5배 이상이면 진하게
+const median = a => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+const vfmt = v => v >= 1e12 ? (v / 1e12).toFixed(1) + "T" : v >= 1e9 ? (v / 1e9).toFixed(1) + "B" : v >= 1e6 ? (v / 1e6).toFixed(0) + "M" : v >= 1e3 ? (v / 1e3).toFixed(0) + "K" : v.toFixed(0);
+const vOpt = { priceFormat: { type: "custom", formatter: vfmt, minMove: 1 }, lastValueVisible: false, priceLineVisible: false };
+const volS = chart.addSeries(LightweightCharts.HistogramSeries, vOpt, 1);
+const normS = chart.addSeries(LightweightCharts.LineSeries, { ...vOpt, color: "#787b86", lineWidth: 1, crosshairMarkerVisible: false }, 1);
 chart.panes()[1].setStretchFactor(.4);
-const eBar = x => { const d = 2 * x.tq - x.q; return { time: x.t / 1000 + TZ, value: d, color: d >= 0 ? "rgba(8,153,129,.85)" : "rgba(242,54,69,.85)" }; };
-function setAll() { const b = bars(); series.setData(b.map(toCandle)); deltaS.setData(b.map(eBar)); }
-function setLast() { const x = bars().at(-1); series.update(toCandle(x)); deltaS.update(eBar(x)); }
+const norm = (b, i) => median(b.slice(i - 20, i).map(x => x.q));
+const vBar = (b, i) => { const x = b[i], a = i >= 20 && x.q >= 1.5 * norm(b, i) ? .9 : .3;
+  return { time: x.t / 1000 + TZ, value: x.q, color: (x.c >= x.o ? "rgba(8,153,129," : "rgba(242,54,69,") + a + ")" }; };
+const nPt = (b, i) => ({ time: b[i].t / 1000 + TZ, value: norm(b, i) });
+function setAll() { const b = bars(); series.setData(b.map(toCandle)); volS.setData(b.map((_, i) => vBar(b, i)));
+  normS.setData(b.flatMap((_, i) => i >= 20 ? [nPt(b, i)] : [])); }
+function setLast() { const b = bars(), i = b.length - 1; series.update(toCandle(b[i])); volS.update(vBar(b, i)); if (i >= 20) normS.update(nPt(b, i)); }
 
 // 켜 둔 봉의 선을 그린다. 여러 봉에 같은 가격이 있으면 선 하나(가장 긴 봉 색)에 이름을 모은다.
 // 짧은 봉 선부터 그려서 긴 봉 선이 위에 온다
@@ -248,7 +296,7 @@ function connect() {
   ws.onmessage = e => {
     const k = JSON.parse(e.data).k, a = k && D && D[k.i];
     if (!a) return;
-    const b = { t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, v: +k.v, tb: +k.V, q: +k.q, tq: +k.Q };
+    const b = { t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, q: +k.q };
     if (b.t === a.at(-1).t) a[a.length - 1] = b; else if (b.t > a.at(-1).t) a.push(b);
     if (k.i === IV[tf]) setLast();
     setPrice(b.c);
@@ -278,15 +326,28 @@ async function show() {
   connect();
 }
 
-// 시세를 새로 받아 봉별 구간을 다시 계산. 5분마다 깨서, 그사이 봉이 닫힌 것만 받는다 (월봉은 매 정시)
-const EVERY = { "1M": 3600e3, "4h": 14400e3, "1h": 3600e3, "30m": 1800e3, "5m": 300e3 }, got = {};
+// 맨 아래 줄: v3 봇과 같은 추세 규칙(일봉·4시간, 롱만)의 지금 상태와, 다음 종가가 어디를 넘어야 바뀌는지
+const won = v => Math.round(v).toLocaleString("en-US");
+function renderTrend() {
+  const d = TR.d1(D["1d"].slice(0, -1)), h = TR.h4(D["4h"].slice(0, -1)), on = (d.s > 0) + (h.s > 0);
+  const tag = (name, s, how) => `<span><i style="background:${s > 0 ? UP : s < 0 ? DN : "#b2b5be"}"></i>${name} <b>${s > 0 ? "상승" : s < 0 ? "하락" : "중립"}</b> ${how}</span>`;
+  $("trend").innerHTML = [`<span><b>추세</b></span>`,
+    tag("일봉", d.s, d.s > 0 ? `· 종가 ${won(d.off)} 아래로 마감하면 꺼짐` : `· 종가 ${won(d.on)} 위로 마감하면 켜짐`),
+    tag("4시간", h.s, h.s > 0 ? `· 종가 ≈${won(h.ema - .5 * h.atr)} 아래거나 200EMA가 꺾이면 꺼짐`
+      : `· 종가 ≈${won(h.ema + .5 * h.atr)} 위 + 200EMA 오름세면 켜짐 (지금 ${h.up ? "오름" : "내림"}세)`),
+    `<span>→ <b>${on === 2 ? "롱 (둘 다 켜짐)" : on ? `롱 절반 (${d.s > 0 ? "일봉" : "4시간"}만 켜짐)` : "쉼 (롱 신호 없음)"}</b></span>`,
+    `<span class="key">아래 칸 = 거래량 <i style="background:${UP}"></i>오른 봉 <i style="background:${DN}"></i>내린 봉 · 진하면 평소(회색 선)의 1.5배 이상</span>`].join("");
+}
+
+// 시세를 새로 받아 봉별 구간·추세를 다시 계산. 5분마다 깨서, 그사이 봉이 닫힌 것만 받는다 (월봉은 매 정시)
+const EVERY = { "1M": 3600e3, "1d": 86400e3, "4h": 14400e3, "1h": 3600e3, "30m": 1800e3, "5m": 300e3 }, got = {};
 async function refresh() {
   let wait = 300e3 - Date.now() % 300e3 + 5e3;
   try {
     const now = Date.now(), need = Object.keys(EVERY).filter(iv => !got[iv] || Math.floor(now / EVERY[iv]) > Math.floor(got[iv] / EVERY[iv]));
     const res = await Promise.all(need.map(get)), first = !D;
     D = D || {}; need.forEach((iv, i) => { D[iv] = res[i]; got[iv] = now; });
-    Z = SR.compute(D["1M"], D["4h"], D["1h"], D["30m"], D["5m"]); drawn = null;
+    Z = SR.compute(D["1M"], D["4h"], D["1h"], D["30m"], D["5m"]); drawn = null; renderTrend();
     if (first) await show();
     else if (need.includes(IV[tf])) { const r = chart.timeScale().getVisibleLogicalRange(); setAll(); if (r) chart.timeScale().setVisibleLogicalRange(r); }
     if (px == null) setPrice(D["5m"].at(-1).c); else draw();
@@ -299,7 +360,7 @@ $("tfs").innerHTML = VIEW.map(t => `<button>${t}</button>`).join("");
 $("tfs").onclick = e => {
   if (e.target.tagName !== "BUTTON" || !D) return;
   tf = e.target.textContent; try { localStorage.srTf = tf; } catch {}
-  show(); readEnergy();
+  show();
 };
 $("legend").innerHTML = ORDER.map(t => `<button data-t="${t}" style="--c:${SHADE[t]}">${t}</button>`).join("");
 const paint = () => $("legend").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(!hide.has(b.dataset.t))));
@@ -313,48 +374,6 @@ $("legend").onclick = e => {
 paint();
 refresh();
 
-// 롱·숏 에너지 판독: 보고 있는 차트 봉의 끝난 봉 4개 (1분 차트는 5분봉, 1개월 이상은 일봉). 봉이 닫힐 때마다 다시 계산한다.
-// 문턱은 코덱스 제안(15분봉 4개 = 60분 기준) 그대로인 검증 전 고정값 (reports/지지저항 정하는 법 코덱스 딥리서치.md 6장)
-const getJ = u => fetch("https://fapi.binance.com" + u).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
-const sum = a => a.reduce((s, x) => s + x, 0);
-const median = a => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
-const sgn = (x, d) => (x >= 0 ? "+" : "") + x.toFixed(d);
-const EIV = { "1m": "5m", "1M": "1d" }, EMIN = { "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "1d": 1440 };
-const EKO = { "5m": "5분", "15m": "15분", "30m": "30분", "1h": "1시간", "4h": "4시간", "1d": "일" };
-const dur = m => m < 60 ? m + "분" : m < 1440 ? m / 60 + "시간" : m / 1440 + "일";
-let eTimer = null, eSeq = 0;
-async function readEnergy() {
-  clearTimeout(eTimer);
-  const iv = EIV[IV[tf]] || IV[tf], ms = EMIN[iv] * 60e3, seq = ++eSeq;
-  let wait = ms - Date.now() % ms + 5e3;
-  try {
-    const [k, oi, fr] = await Promise.all([getJ(`/fapi/v1/klines?symbol=BTCUSDT&interval=${iv}&limit=300`),
-      getJ(`/futures/data/openInterestHist?symbol=BTCUSDT&period=${iv}&limit=5`).catch(() => null),
-      getJ("/fapi/v1/fundingRate?symbol=BTCUSDT&limit=2").catch(() => null)]);
-    if (seq !== eSeq) return;                                   // 받는 사이 봉을 바꿨으면 버린다
-    const b = k.slice(0, -1).map(toBar), n = b.length, w = b.slice(n - 4);           // 끝난 봉만
-    const V = sum(w.map(x => x.v)), Dv = (2 * sum(w.map(x => x.tb)) - V) / V;         // D = (매수−매도)/전체
-    const R = V / median(Array.from({ length: 20 }, (_, i) => sum(b.slice(n - 8 - 4 * i, n - 4 - 4 * i).map(x => x.v))));
-    const A = SR.atr(b.slice(0, n - 4)).at(-1), mv = (w[3].c - b[n - 5].c) / A;       // 구간 시작 전 ATR(같은 봉) 기준 순이동
-    const side = R >= 1.5 && Dv >= .2 ? 1 : R >= 1.5 && Dv <= -.2 ? -1 : 0, who = side > 0 ? "매수" : "매도";
-    let atk = ["혼합·약한 공격", "#b2b5be"], px1 = `${sgn(mv, 2)} ATR`;
-    if (side && Math.abs(mv) <= .25) { atk = [`${who} 공격 우세`, side > 0 ? UP : DN]; px1 = `흡수 가능성 (${px1}, 반대편이 받아 줌)`; }
-    else if (side && mv * side < 0) { atk = [`${who} 공격 많았지만 우세 보류`, "#b2b5be"]; px1 = `공격과 반대로 움직임 (${px1})`; }
-    else if (side) { atk = [`${who} 공격 우세`, side > 0 ? UP : DN]; px1 = `${mv * side >= .5 ? "따라감" : "조금 따라감"} (${px1})`; }
-    const g = oi && oi.length >= 5 ? +oi.at(-1).sumOpenInterest / +oi.at(-5).sumOpenInterest - 1 : null;
-    const f8 = fr && fr.length === 2 ? +fr[1].fundingRate * 8 / ((fr[1].fundingTime - fr[0].fundingTime) / 36e5) : null;
-    const it = (label, val, color) => `<span><i style="background:${color}"></i>${label} <b>${val}</b></span>`;
-    const end = new Date(w[3].t + ms).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-    $("energy").innerHTML = [`<span><b>에너지</b> 최근 ${dur(4 * EMIN[iv])} (${EKO[iv]}봉 4개) · ${end}까지</span>`,
-      it("공격", `${atk[0]}`, atk[1]) + ` 매수 ${((1 + Dv) * 50).toFixed(0)}% · 거래량 ${R.toFixed(1)}배`,
-      it("가격", px1, "#b2b5be"),
-      g == null ? "<span>미결제약정 -</span>" : it("미결제약정", `${g >= .005 ? "확대" : g <= -.005 ? "축소" : "보합"} ${sgn(g * 100, 2)}%`, "#b2b5be"),
-      f8 == null ? "<span>펀딩 -</span>" : it("펀딩", `${f8 >= .0003 ? "롱 보유 비용 높음" : f8 <= -.0003 ? "숏 보유 비용 높음" : "보통"} ${sgn(f8 * 100, 3)}%/8h`, "#b2b5be"),
-      `<span class="key">아래 칸 = 시장가 매수 − 매도 <i style="background:${UP}"></i>매수가 셈 <i style="background:${DN}"></i>매도가 셈</span>`].join("");
-  } catch (e) { if (seq !== eSeq) return; $("energy").innerHTML = `<span><b>에너지</b> 오류: ${e.message} (1분 뒤 다시)</span>`; wait = 60e3; }
-  eTimer = setTimeout(readEnergy, wait);
-}
-readEnergy();
 </script>
 </body>
 </html>
