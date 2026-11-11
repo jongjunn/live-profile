@@ -15,7 +15,6 @@
   #tfs button { background:none; border:0; border-radius:4px; padding:6px 8px; font:inherit; color:var(--dim); cursor:pointer; }
   #tfs button:hover { background:var(--soft); color:var(--text); }
   #tfs button.on { background:var(--soft); color:var(--text); font-weight:600; }
-  #tfs .sep { width:1px; height:18px; margin:auto 4px; background:var(--line); }
   #price { font-weight:600; font-variant-numeric:tabular-nums; }
   #st { color:var(--dim); font-size:12px; }
   #dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#F23645; margin-right:5px; }
@@ -44,7 +43,7 @@
   <span id="st"><span id="dot"></span><span id="upd">불러오는 중…</span></span>
 </header>
 <div id="wrap"><div id="chart"></div><div id="legend" title="지지·저항 선 켜고 끄기 (봉마다 현재가 위·아래로 가까운 3개씩)"></div></div>
-<div id="energy" title="최근 끝난 15분봉 4개(60분) 기준. 문턱 숫자는 검증 전 고정값이다."><span><b>에너지</b> 불러오는 중…</span></div>
+<div id="energy" title="보고 있는 차트 봉의 끝난 봉 4개 기준 (1분 차트는 5분봉, 1개월 이상은 일봉). 문턱 숫자는 검증 전 고정값이다."><span><b>에너지</b> 불러오는 중…</span></div>
 
 <script id="sr">
 // 봉별 지지·저항. btc_levels.py 와 같은 규칙이고, 같은 값을 내는지 check_sr_js.py 로 확인한다.
@@ -52,7 +51,8 @@ const SR = (() => {
   //            N, 왼쪽엄격, 오른쪽엄격, 동시허용, 폭 ATR배, 폭 하한(가격비), 돌파 ATR배, 돌파 하한, 만료봉, 폭 상한(가격비. 이때 돌파 여유는 2%까지)
   const TF = { "1년": [1, 1, 1, 1, .25, 0, .10, 0, 0, .05], "6개월": [1, 1, 1, 1, .25, 0, .10, 0, 0, .05],
     "3개월": [1, 1, 1, 1, .25, 0, .10, 0, 0, .05], "1개월": [2, 1, 1, 1, .25, 0, .10, 0, 0, .05],
-    "4시간": [3, 1, 0, 0, .25, .001, .10, .0005, 360, 0], "1시간": [2, 1, 1, 1, .25, 0, .10, 0, 336, 0] };
+    "4시간": [3, 1, 0, 0, .25, .001, .10, .0005, 360, 0], "1시간": [2, 1, 1, 1, .25, 0, .10, 0, 336, 0],
+    "30분": [2, 1, 0, 0, .20, .0003, .10, .0002, 336, 0], "5분": [2, 1, 1, 1, .25, .0002, .10, .0001, 576, 0] };
   const KEY = { "3개월": d => d.getUTCFullYear() * 10 + Math.floor(d.getUTCMonth() / 3),
     "6개월": d => d.getUTCFullYear() * 10 + Math.floor(d.getUTCMonth() / 6), "1년": d => d.getUTCFullYear() };
   const SHOW = 3;                                              // 현재가 위·아래로 가까운 구간 3개씩
@@ -155,9 +155,11 @@ const SR = (() => {
       inside: union(Z.filter(z => z.D <= px && px <= z.U)) };
   }
 
-  // 입력: 월봉·4시간·1시간 (각각 마지막이 진행 중 봉) → 봉별 살아 있는 구간
-  function compute(mo, h4, h1) {
+  // 입력: 월봉·4시간·1시간(·30분·5분) (각각 마지막이 진행 중 봉) → 봉별 살아 있는 구간
+  function compute(mo, h4, h1, m30, m5) {
     const all = { "1년": group(mo, KEY["1년"]), "6개월": group(mo, KEY["6개월"]), "3개월": group(mo, KEY["3개월"]), "1개월": mo, "4시간": h4, "1시간": h1 };
+    if (m30) all["30분"] = m30;
+    if (m5) all["5분"] = m5;
     return Object.fromEntries(Object.entries(all).map(([tf, b]) => [tf, zones(b.slice(0, -1), tf)]));
   }
 
@@ -167,10 +169,12 @@ const SR = (() => {
 
 <script>
 const $ = id => document.getElementById(id);
-const ORDER = ["1년", "6개월", "3개월", "1개월", "4시간", "1시간"];             // 지지·저항을 계산하는 봉
-const VIEW = [...ORDER, "30분", "15분", "5분", "1분"];                         // 차트로 볼 수 있는 봉 (분봉은 보기만)
-// 선 색: 긴 봉은 어둡고 차가운 색, 짧은 봉은 따뜻한 색. 캔들 초록·빨강을 피했고 흰 바탕 대비 3:1 이상, 색끼리 일반 시력 색차(OKLab×100) 17 이상
-const SHADE = { "1년": "#000000", "6개월": "#1e3a8a", "3개월": "#8e24aa", "1개월": "#2a78d6", "4시간": "#8d5524", "1시간": "#c98500" };
+const ORDER = ["1년", "6개월", "3개월", "1개월", "4시간", "1시간", "30분", "5분"];   // 지지·저항을 계산하는 봉
+const VIEW = ["1년", "6개월", "3개월", "1개월", "4시간", "1시간", "30분", "15분", "5분", "1분"];   // 차트로 볼 수 있는 봉 (15분·1분은 보기만)
+// 선 색: 긴 봉은 어둡고 차가운 색, 1시간까지 따뜻한 색, 30분·5분은 짙은·옅은 회색. 캔들 초록·빨강을 피했다.
+// 색끼리 일반 시력 색차(OKLab×100) 13 이상. 5분 회색만 흰 바탕 대비 2.5:1 이라 선 이름표로 구분한다
+const SHADE = { "1년": "#000000", "6개월": "#1e3a8a", "3개월": "#8e24aa", "1개월": "#2a78d6", "4시간": "#8d5524", "1시간": "#c98500", "30분": "#4b5563", "5분": "#9ca3af" };
+const DARK = new Set(["1시간", "5분"]);                                          // 밝은 선은 축 이름표 글씨를 검게
 const IV = { "1년": "1M", "6개월": "1M", "3개월": "1M", "1개월": "1M", "4시간": "4h", "1시간": "1h", "30분": "30m", "15분": "15m", "5분": "5m", "1분": "1m" };
 const API = "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&limit=1500&interval=";
 const WS = "wss://fstream.binance.com/market/ws/btcusdt@kline_";   // USDⓈ-M 스트림은 /market/ws/ 아래 (옛 /ws/는 연결만 되고 안 옴)
@@ -226,7 +230,7 @@ function draw() {
   drawn = key;
   lines.forEach(l => series.removePriceLine(l));
   lines = sel.map(([p, ts]) => series.createPriceLine({ price: p, color: SHADE[ts[0]], lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Solid,
-    axisLabelVisible: true, title: ts.join("·"), axisLabelColor: SHADE[ts[0]], axisLabelTextColor: ts[0] === "1시간" ? "#131722" : "#ffffff" }));
+    axisLabelVisible: true, title: ts.join("·"), axisLabelColor: SHADE[ts[0]], axisLabelTextColor: DARK.has(ts[0]) ? "#131722" : "#ffffff" }));
 }
 
 function setPrice(p) {
@@ -264,7 +268,7 @@ chart.timeScale().subscribeSizeChange(() => { if (reframe) frame(); });
 async function show() {
   const want = tf, iv = IV[tf];
   document.querySelectorAll("#tfs button").forEach(b => b.classList.toggle("on", b.textContent === tf));
-  if (/m$/.test(iv)) {                                         // 분봉은 고를 때마다 새로 받는다 (차트로만 보고 선 계산엔 안 씀)
+  if (/m$/.test(iv)) {                                         // 분봉은 고를 때마다 새로 받는다 (30분·5분 선은 refresh 값으로 계산)
     try { D[iv] = await get(iv); } catch (e) { $("upd").textContent = "데이터 오류: " + e.message; return; }
     if (want !== tf) return;                                   // 받는 사이 다른 봉을 골랐으면 버린다
   }
@@ -274,26 +278,28 @@ async function show() {
   connect();
 }
 
-// 시세를 새로 받아 봉별 구간을 다시 계산. 1시간·4시간·월봉은 모두 정시에 닫히므로 매 정시 5초 뒤에 다시
+// 시세를 새로 받아 봉별 구간을 다시 계산. 5분마다 깨서, 그사이 봉이 닫힌 것만 받는다 (월봉은 매 정시)
+const EVERY = { "1M": 3600e3, "4h": 14400e3, "1h": 3600e3, "30m": 1800e3, "5m": 300e3 }, got = {};
 async function refresh() {
-  let wait = 3600e3 - Date.now() % 3600e3 + 5e3;
+  let wait = 300e3 - Date.now() % 300e3 + 5e3;
   try {
-    const [mo, h4, h1] = await Promise.all([get("1M"), get("4h"), get("1h")]);
-    const first = !D;
-    D = Object.assign(D || {}, { "1M": mo, "4h": h4, "1h": h1 }); Z = SR.compute(mo, h4, h1); drawn = null;
+    const now = Date.now(), need = Object.keys(EVERY).filter(iv => !got[iv] || Math.floor(now / EVERY[iv]) > Math.floor(got[iv] / EVERY[iv]));
+    const res = await Promise.all(need.map(get)), first = !D;
+    D = D || {}; need.forEach((iv, i) => { D[iv] = res[i]; got[iv] = now; });
+    Z = SR.compute(D["1M"], D["4h"], D["1h"], D["30m"], D["5m"]); drawn = null;
     if (first) await show();
-    else if (!/m$/.test(IV[tf])) { const r = chart.timeScale().getVisibleLogicalRange(); setAll(); if (r) chart.timeScale().setVisibleLogicalRange(r); }
-    if (px == null) setPrice(h1.at(-1).c); else draw();
+    else if (need.includes(IV[tf])) { const r = chart.timeScale().getVisibleLogicalRange(); setAll(); if (r) chart.timeScale().setVisibleLogicalRange(r); }
+    if (px == null) setPrice(D["5m"].at(-1).c); else draw();
     $("upd").textContent = "갱신 " + new Date().toLocaleTimeString("ko-KR");
   } catch (e) { $("upd").textContent = "데이터 오류: " + e.message + " (30초 뒤 다시)"; wait = 30e3; }
   setTimeout(refresh, wait);
 }
 
-$("tfs").innerHTML = VIEW.map(t => (t === "30분" ? '<span class="sep"></span>' : "") + `<button>${t}</button>`).join("");
+$("tfs").innerHTML = VIEW.map(t => `<button>${t}</button>`).join("");
 $("tfs").onclick = e => {
   if (e.target.tagName !== "BUTTON" || !D) return;
   tf = e.target.textContent; try { localStorage.srTf = tf; } catch {}
-  show();
+  show(); readEnergy();
 };
 $("legend").innerHTML = ORDER.map(t => `<button data-t="${t}" style="--c:${SHADE[t]}">${t}</button>`).join("");
 const paint = () => $("legend").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(!hide.has(b.dataset.t))));
@@ -307,22 +313,29 @@ $("legend").onclick = e => {
 paint();
 refresh();
 
-// 최근 60분(끝난 15분봉 4개) 롱·숏 에너지 판독. 문턱은 코덱스 제안 그대로인 검증 전 고정값
-// (reports/지지저항 정하는 법 코덱스 딥리서치.md 6장). 15분마다 다시 계산한다
+// 롱·숏 에너지 판독: 보고 있는 차트 봉의 끝난 봉 4개 (1분 차트는 5분봉, 1개월 이상은 일봉). 봉이 닫힐 때마다 다시 계산한다.
+// 문턱은 코덱스 제안(15분봉 4개 = 60분 기준) 그대로인 검증 전 고정값 (reports/지지저항 정하는 법 코덱스 딥리서치.md 6장)
 const getJ = u => fetch("https://fapi.binance.com" + u).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
 const sum = a => a.reduce((s, x) => s + x, 0);
 const median = a => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 const sgn = (x, d) => (x >= 0 ? "+" : "") + x.toFixed(d);
+const EIV = { "1m": "5m", "1M": "1d" }, EMIN = { "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "1d": 1440 };
+const EKO = { "5m": "5분", "15m": "15분", "30m": "30분", "1h": "1시간", "4h": "4시간", "1d": "일" };
+const dur = m => m < 60 ? m + "분" : m < 1440 ? m / 60 + "시간" : m / 1440 + "일";
+let eTimer = null, eSeq = 0;
 async function readEnergy() {
-  let wait = 900e3 - Date.now() % 900e3 + 5e3;
+  clearTimeout(eTimer);
+  const iv = EIV[IV[tf]] || IV[tf], ms = EMIN[iv] * 60e3, seq = ++eSeq;
+  let wait = ms - Date.now() % ms + 5e3;
   try {
-    const [k, oi, fr] = await Promise.all([getJ("/fapi/v1/klines?symbol=BTCUSDT&interval=15m&limit=300"),
-      getJ("/futures/data/openInterestHist?symbol=BTCUSDT&period=15m&limit=5").catch(() => null),
+    const [k, oi, fr] = await Promise.all([getJ(`/fapi/v1/klines?symbol=BTCUSDT&interval=${iv}&limit=300`),
+      getJ(`/futures/data/openInterestHist?symbol=BTCUSDT&period=${iv}&limit=5`).catch(() => null),
       getJ("/fapi/v1/fundingRate?symbol=BTCUSDT&limit=2").catch(() => null)]);
+    if (seq !== eSeq) return;                                   // 받는 사이 봉을 바꿨으면 버린다
     const b = k.slice(0, -1).map(toBar), n = b.length, w = b.slice(n - 4);           // 끝난 봉만
     const V = sum(w.map(x => x.v)), Dv = (2 * sum(w.map(x => x.tb)) - V) / V;         // D = (매수−매도)/전체
     const R = V / median(Array.from({ length: 20 }, (_, i) => sum(b.slice(n - 8 - 4 * i, n - 4 - 4 * i).map(x => x.v))));
-    const A = SR.atr(b.slice(0, n - 4)).at(-1), mv = (w[3].c - b[n - 5].c) / A;       // 구간 시작 전 15분 ATR 기준 순이동
+    const A = SR.atr(b.slice(0, n - 4)).at(-1), mv = (w[3].c - b[n - 5].c) / A;       // 구간 시작 전 ATR(같은 봉) 기준 순이동
     const side = R >= 1.5 && Dv >= .2 ? 1 : R >= 1.5 && Dv <= -.2 ? -1 : 0, who = side > 0 ? "매수" : "매도";
     let atk = ["혼합·약한 공격", "#b2b5be"], px1 = `${sgn(mv, 2)} ATR`;
     if (side && Math.abs(mv) <= .25) { atk = [`${who} 공격 우세`, side > 0 ? UP : DN]; px1 = `흡수 가능성 (${px1}, 반대편이 받아 줌)`; }
@@ -331,15 +344,15 @@ async function readEnergy() {
     const g = oi && oi.length >= 5 ? +oi.at(-1).sumOpenInterest / +oi.at(-5).sumOpenInterest - 1 : null;
     const f8 = fr && fr.length === 2 ? +fr[1].fundingRate * 8 / ((fr[1].fundingTime - fr[0].fundingTime) / 36e5) : null;
     const it = (label, val, color) => `<span><i style="background:${color}"></i>${label} <b>${val}</b></span>`;
-    const end = new Date(w[3].t + 900e3).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-    $("energy").innerHTML = [`<span><b>에너지</b> 최근 60분 · ${end}까지</span>`,
+    const end = new Date(w[3].t + ms).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+    $("energy").innerHTML = [`<span><b>에너지</b> 최근 ${dur(4 * EMIN[iv])} (${EKO[iv]}봉 4개) · ${end}까지</span>`,
       it("공격", `${atk[0]}`, atk[1]) + ` 매수 ${((1 + Dv) * 50).toFixed(0)}% · 거래량 ${R.toFixed(1)}배`,
       it("가격", px1, "#b2b5be"),
       g == null ? "<span>미결제약정 -</span>" : it("미결제약정", `${g >= .005 ? "확대" : g <= -.005 ? "축소" : "보합"} ${sgn(g * 100, 2)}%`, "#b2b5be"),
       f8 == null ? "<span>펀딩 -</span>" : it("펀딩", `${f8 >= .0003 ? "롱 보유 비용 높음" : f8 <= -.0003 ? "숏 보유 비용 높음" : "보통"} ${sgn(f8 * 100, 3)}%/8h`, "#b2b5be"),
       `<span class="key">아래 칸 = 시장가 매수 − 매도 <i style="background:${UP}"></i>매수가 셈 <i style="background:${DN}"></i>매도가 셈</span>`].join("");
-  } catch (e) { $("energy").innerHTML = `<span><b>에너지</b> 오류: ${e.message} (1분 뒤 다시)</span>`; wait = 60e3; }
-  setTimeout(readEnergy, wait);
+  } catch (e) { if (seq !== eSeq) return; $("energy").innerHTML = `<span><b>에너지</b> 오류: ${e.message} (1분 뒤 다시)</span>`; wait = 60e3; }
+  eTimer = setTimeout(readEnergy, wait);
 }
 readEnergy();
 </script>
