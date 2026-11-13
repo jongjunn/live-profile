@@ -11,10 +11,15 @@
   body { margin:0; display:flex; flex-direction:column; background:var(--bg); color:var(--text);
     font:14px -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, "Apple SD Gothic Neo", sans-serif; }
   header { display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; padding:6px 12px; border-bottom:1px solid var(--line); }
-  #tfs { display:flex; flex-wrap:wrap; gap:2px; }
-  #tfs button { background:none; border:0; border-radius:4px; padding:6px 8px; font:inherit; color:var(--dim); cursor:pointer; }
-  #tfs button:hover { background:var(--soft); color:var(--text); }
-  #tfs button.on { background:var(--soft); color:var(--text); font-weight:600; }
+  #tfs, #tools { display:flex; flex-wrap:wrap; gap:2px; }
+  #tfs button, #tools button { background:none; border:0; border-radius:4px; padding:6px 8px; font:inherit; color:var(--dim); cursor:pointer; }
+  #tfs button:hover, #tools button:hover { background:var(--soft); color:var(--text); }
+  #tfs button.on, #tools button.on { background:var(--soft); color:var(--text); font-weight:600; }
+  #tools button:disabled, #tools button:disabled:hover { opacity:.35; cursor:default; background:none; color:var(--dim); }
+  #wrap[data-cur="pointer"] #chart canvas { cursor:pointer !important; } #wrap[data-cur="move"] #chart canvas { cursor:move !important; }
+  #wrap[data-cur="crosshair"] #chart canvas { cursor:crosshair !important; }
+  #hint { align-self:center; padding:3px 8px; border-radius:4px; background:rgba(217,70,239,.14); font:12px -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+  #hint:empty { display:none; }
   #price { font-weight:600; font-variant-numeric:tabular-nums; }
   #st { color:var(--dim); font-size:12px; }
   #dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#F23645; margin-right:5px; }
@@ -39,10 +44,16 @@
 <header>
   <b>BTCUSDT 무기한</b>
   <div id="tfs"></div>
+  <div id="tools">
+    <button data-k="h" title="수평선: 놓을 자리를 한 번 누르기">수평선</button>
+    <button data-k="x" title="연장선: 두 점을 누르면 그 둘을 지나 양쪽으로 끝없이 이어지는 선 (누른 채 끌어서 놓아도 됨)">연장선</button>
+    <button id="del" disabled title="선택한 선 지우기 (Delete 키)">삭제</button>
+    <button id="clr" title="그린 선 모두 지우기">모두 지우기</button>
+  </div>
   <span id="price">-</span>
   <span id="st"><span id="dot"></span><span id="upd">불러오는 중…</span></span>
 </header>
-<div id="wrap"><div id="chart"></div><div id="legend" title="지지·저항 선 켜고 끄기 (봉마다 현재가 위·아래로 가까운 3개씩)"></div></div>
+<div id="wrap"><div id="chart"></div><div id="legend" title="지지·저항 선 켜고 끄기 (봉마다 현재가 위·아래로 가까운 3개씩)"><span id="hint"></span></div></div>
 <div id="trend" title="v3 봇과 같은 추세 규칙 (끝난 봉 기준). 일봉: 200일선 위 + 직전 55일 최고 종가 돌파면 켜짐, 직전 20일 최저 종가나 200일선 아래로 마감하면 꺼짐. 4시간: 종가가 200EMA±0.5ATR 밖 + 200EMA 6봉 기울기 같은 방향. 2019~2025 시험에서 비용 뒤 돈이 된 건 이 둘(롱만)뿐이고, 숏은 롱만보다 나빠 뺐다."><span><b>추세</b> 불러오는 중…</span></div>
 
 <script id="sr">
@@ -356,13 +367,172 @@ async function refresh() {
   setTimeout(refresh, wait);
 }
 
+// ---- 그리기: 수평선·연장선 (트레이딩뷰 식). 시간+가격으로 저장해서 어느 봉으로 봐도 같은 자리에 그려지고, 이 브라우저에만 저장된다.
+// 도구를 고르고 누른다. 수평선은 한 번, 연장선은 두 점 (두 번 누르거나, 누른 채 끌어서 놓기). 연장선 = 두 점을 지나 양쪽으로 끝없이 이어지는 선.
+// 도구 없이 선을 누르면 선택돼서 끌면 옮겨지고 (연장선은 끝점을 끌면 모양이 바뀜), Delete 키나 삭제 버튼으로 지운다.
+// 봉의 시가·고가·저가·종가가 10px 안이면 거기에 붙는다 (Alt 를 누르면 안 붙음). 라이브러리에 선 그리기가 없어서 시리즈 프리미티브로 직접 그린다.
+const INK = "#d946ef";
+let tool = "", shapes = [], pend = null, mouse = null, chosen = null, press = null, repaint = () => {};
+try { shapes = JSON.parse(localStorage.srDraw || "[]").filter(s => s && (s.k === "h" ? Number.isFinite(s.p1) : s.k === "x" && [s.t1, s.p1, s.t2, s.p2].every(Number.isFinite))); } catch {}
+const saveShapes = () => { try { localStorage.srDraw = JSON.stringify(shapes.map(({ pl, ...s }) => s)); } catch {} };
+const mkLine = s => { s.pl = series.createPriceLine({ price: s.p1, color: INK, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed,   // 수평선 = 가격선 (축 이름표가 같이 붙음)
+  axisLabelVisible: true, title: "", axisLabelColor: INK, axisLabelTextColor: "#131722" }); };
+shapes.forEach(s => { if (s.k === "h") mkLine(s); });
+
+// 화면 ↔ 시간·가격. 시간은 실제 초(UTC)로 저장하고, 차트가 쓰는 시간(TZ만큼 민 값)으로 바꿔 쓴다
+const stepSec = d => d.length > 1 ? d[d.length - 1].time - d[d.length - 2].time : 86400;
+function xToTime(x, d) {                                       // 가장 가까운 봉 (차트 밖은 봉 간격만큼 연장)
+  const l = chart.timeScale().coordinateToLogical(x), n = d.length;
+  if (l === null || n < 2) return null;
+  const i = Math.round(l);
+  return i < 0 ? d[0].time + i * stepSec(d) : i > n - 1 ? d[n - 1].time + (i - (n - 1)) * stepSec(d) : d[i].time;
+}
+function timeToX(t, d) {
+  const n = d.length, ts = chart.timeScale(); let l;
+  if (n < 2) return null;
+  if (t <= d[0].time) l = (t - d[0].time) / stepSec(d);
+  else if (t >= d[n - 1].time) l = n - 1 + (t - d[n - 1].time) / stepSec(d);
+  else { let a = 0, b = n - 1; while (b - a > 1) { const m = (a + b) >> 1; if (d[m].time <= t) a = m; else b = m; } l = a + (t - d[a].time) / (d[b].time - d[a].time); }
+  const f = Math.floor(l), xa = ts.logicalToCoordinate(f), xb = ts.logicalToCoordinate(f + 1);   // 라이브러리는 소수 번호엔 0을 주므로 정수 번호 둘 사이를 직접 섞는다
+  return xa === null || xb === null ? null : xa + (xb - xa) * (l - f);
+}
+function pointAt(x, y, e) {                                    // 화면 점 → {t, p}
+  const d = series.data(), t = xToTime(x, d);
+  let p = series.coordinateToPrice(y);
+  if (t === null || p === null) return null;
+  const b = d[Math.round(chart.timeScale().coordinateToLogical(x))];
+  if (b && !(e && e.altKey)) {
+    const [v, gap] = [b.open, b.high, b.low, b.close].map(v => [v, Math.abs(series.priceToCoordinate(v) - y)]).sort((u, w) => u[1] - w[1])[0];
+    if (gap < 10) p = v;
+  }
+  return { t: t - TZ, p };
+}
+function segs() {                                              // 화면에 그릴 연장선 [{s, A, B}] (미리보기 포함). 좌표를 못 구한 것은 뺀다
+  if (!shapes.length && !pend) return [];
+  const d = series.data(), out = [];
+  const xy = (t, p) => { const x = timeToX(t + TZ, d), y = series.priceToCoordinate(p); return x === null || y === null ? null : { x, y }; };
+  for (const s of [...shapes, ...(pend && mouse ? [{ ...pend, t2: mouse.t, p2: mouse.p, tmp: 1 }] : [])]) {
+    if (s.k !== "x") continue;
+    const A = xy(s.t1, s.p1), B = xy(s.t2, s.p2);
+    if (A && B) out.push({ s, A, B });
+  }
+  return out;
+}
+series.attachPrimitive({
+  attached: p => { repaint = p.requestUpdate; },
+  paneViews: () => [{ zOrder: () => "top", renderer: () => ({ draw: tgt => tgt.useMediaCoordinateSpace(({ context: c, mediaSize: { width: W, height: H } }) => {
+    for (const { s, A, B } of segs()) {
+      c.strokeStyle = INK; c.lineWidth = s === chosen ? 3 : 2; c.setLineDash([6, 4]); c.globalAlpha = s.tmp ? .55 : 1;   // 수평선과 같은 점선, 둘째 점 전 미리보기는 옅게
+      c.beginPath();
+      if (Math.abs(B.x - A.x) < .5) { c.moveTo(A.x, 0); c.lineTo(A.x, H); }            // 두 점이 위아래로 겹치면 세로선
+      else { const m = (B.y - A.y) / (B.x - A.x); c.moveTo(0, A.y - m * A.x); c.lineTo(W, A.y + m * (W - A.x)); }
+      c.stroke();
+      if (s === chosen) for (const q of [A, B]) { c.setLineDash([]); c.beginPath(); c.arc(q.x, q.y, 5, 0, 7); c.fillStyle = "#fff"; c.fill(); c.lineWidth = 1.5; c.stroke(); }
+    }
+  }) }) }],
+});
+function hitShape(x, y, tol = 6) {                            // 점 아래의 그림 (나중에 그린 것 먼저). 선택된 연장선의 끝점이면 w = "A"|"B". tol = 허용 픽셀 (손가락은 넓게)
+  const G = segs();
+  for (const s of [...shapes].reverse()) {
+    if (s.k === "h") { const yy = series.priceToCoordinate(s.p1); if (yy !== null && Math.abs(y - yy) < tol) return { s }; continue; }
+    const g = G.find(g => g.s === s); if (!g) continue;
+    if (s === chosen) for (const w of ["A", "B"]) if (Math.hypot(g[w].x - x, g[w].y - y) < tol + 3) return { s, w };
+    const dx = g.B.x - g.A.x, dy = g.B.y - g.A.y, L = Math.hypot(dx, dy);
+    if (L && Math.abs(dx * (g.A.y - y) - (g.A.x - x) * dy) / L < tol) return { s };            // 두 점을 지나는 직선까지의 거리
+  }
+  return null;
+}
+function shiftShape(s, o, dx, dy) {                            // 픽셀만큼 옮긴다 (그려진 모습 그대로 따라가게)
+  const d = series.data();
+  for (const [kt, kp] of [["t1", "p1"], ["t2", "p2"]]) {
+    if (o[kt] !== undefined) { const x = timeToX(o[kt] + TZ, d), t = x === null ? null : xToTime(x + dx, d); if (t !== null) s[kt] = t - TZ; }
+    if (o[kp] !== undefined) { const y = series.priceToCoordinate(o[kp]), p = y === null ? null : series.coordinateToPrice(y + dy); if (p !== null) s[kp] = p; }
+  }
+}
+
+function syncTools() {
+  $("tools").querySelectorAll("button[data-k]").forEach(b => b.classList.toggle("on", b.dataset.k === tool));
+  $("del").disabled = !chosen;
+  $("hint").textContent = tool === "h" ? "놓을 곳을 누르세요"                                // 취소 = Esc 또는 도구 버튼 다시 누르기
+    : tool === "x" ? (pend ? "둘째 점을 누르세요" : "첫째 점을 누르세요")
+    : chosen ? "끌어서 옮기기 · Delete 삭제" : "";
+  for (const s of shapes) if (s.pl) s.pl.applyOptions({ price: s.p1, lineWidth: s === chosen ? 3 : 2 });
+  repaint();
+}
+const setTool = k => { tool = k; pend = null; if (k) chosen = null; syncTools(); };
+function addShape(s) { shapes.push(s); if (s.k === "h") mkLine(s); chosen = s; tool = ""; pend = null; saveShapes(); syncTools(); }
+function removeChosen() {
+  if (!chosen) return;
+  if (chosen.pl) series.removePriceLine(chosen.pl);
+  shapes.splice(shapes.indexOf(chosen), 1); chosen = null; saveShapes(); syncTools();
+}
+$("tools").onclick = e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.k) setTool(tool === b.dataset.k ? "" : b.dataset.k);
+  else if (b.id === "del") removeChosen();
+  else if (b.id === "clr" && shapes.length && confirm("그린 선을 모두 지울까요?")) {
+    shapes.forEach(s => { if (s.pl) series.removePriceLine(s.pl); }); shapes = []; chosen = null; saveShapes(); setTool("");
+  }
+};
+window.addEventListener("keydown", e => {
+  if (e.key === "Escape") { chosen = null; setTool(""); }
+  else if ((e.key === "Delete" || e.key === "Backspace") && chosen) removeChosen();
+});
+
+// 마우스: 누르면 도구가 있을 땐 그리기, 없을 땐 선 선택·옮기기, 아무것도 없으면 차트 끌기. 그리거나 옮기는 동안은 차트가 같이 안 끌리게 끈다
+// (차트 라이브러리가 누름을 보기 전에 캡처 단계에서 꺼야 한다)
+const rel = e => { const r = $("chart").getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+const inPane = (x, y) => x >= 0 && x < chart.timeScale().width() && y >= 0 && y < chart.panes()[0].getHeight();
+const lockPan = on => chart.applyOptions({ handleScroll: { pressedMouseMove: !on, horzTouchDrag: !on, vertTouchDrag: !on } });
+$("chart").addEventListener("pointerdown", e => {
+  if (e.button !== 0 || !series.data().length) return;
+  const [x, y] = rel(e);
+  if (!inPane(x, y)) return;
+  press = { x, y, mode: "pan" };
+  if (tool) {
+    press.mode = "draw";
+    if (tool === "x" && !pend) { const p = pointAt(x, y, e); if (p) { pend = { k: "x", t1: p.t, p1: p.p }; press.fresh = true; } }
+  } else {
+    const h = hitShape(x, y, e.pointerType === "touch" ? 16 : 6);
+    chosen = h ? h.s : null;
+    if (h) Object.assign(press, { mode: h.w ? "anchor" : "move", w: h.w, orig: { ...h.s }, moved: false });
+  }
+  if (press.mode !== "pan") lockPan(true);
+  syncTools();
+}, true);
+window.addEventListener("pointermove", e => {
+  const [x, y] = rel(e), on = inPane(x, y);
+  mouse = on && (pend || press) ? pointAt(x, y, e) : null;       // 미리보기·끌기에만 필요
+  if (press && (press.mode === "move" || press.mode === "anchor") && (press.moved || Math.hypot(x - press.x, y - press.y) > 3)) {
+    press.moved = true;
+    if (press.mode === "move") shiftShape(chosen, press.orig, x - press.x, y - press.y);
+    else if (mouse) { const n = press.w === "A" ? 1 : 2; chosen["t" + n] = mouse.t; chosen["p" + n] = mouse.p; }
+    if (chosen.pl) chosen.pl.applyOptions({ price: chosen.p1 });
+  }
+  if (!press) { const h = on && !tool && shapes.length ? hitShape(x, y) : null; $("wrap").dataset.cur = !on ? "" : tool ? "crosshair" : h ? (h.w ? "move" : "pointer") : ""; }
+  if (pend || press) repaint();
+});
+window.addEventListener("pointerup", e => {
+  if (!press) return;
+  const [x, y] = rel(e), moved = Math.hypot(x - press.x, y - press.y) > 5, m = press.mode, p = pointAt(x, y, e);
+  if (m === "draw" && p) {
+    if (tool === "h") addShape({ k: "h", p1: p.p });
+    else if (tool === "x" && pend && (moved || !press.fresh) && (p.t !== pend.t1 || p.p !== pend.p1)) addShape({ ...pend, t2: p.t, p2: p.p });
+  } else if (press.moved) saveShapes();
+  if (m !== "pan") lockPan(false);
+  press = null; syncTools();
+}, true);
+window.addEventListener("pointercancel", () => { if (press && press.mode !== "pan") lockPan(false); press = null; });
+syncTools();
+
 $("tfs").innerHTML = VIEW.map(t => `<button>${t}</button>`).join("");
 $("tfs").onclick = e => {
   if (e.target.tagName !== "BUTTON" || !D) return;
   tf = e.target.textContent; try { localStorage.srTf = tf; } catch {}
   show();
 };
-$("legend").innerHTML = ORDER.map(t => `<button data-t="${t}" style="--c:${SHADE[t]}">${t}</button>`).join("");
+$("legend").insertAdjacentHTML("afterbegin", ORDER.map(t => `<button data-t="${t}" style="--c:${SHADE[t]}">${t}</button>`).join(""));
 const paint = () => $("legend").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(!hide.has(b.dataset.t))));
 $("legend").onclick = e => {
   const t = e.target.closest("button")?.dataset.t;
